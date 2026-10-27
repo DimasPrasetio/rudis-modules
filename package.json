@@ -1,0 +1,13 @@
+{
+  "name": "rudis-modules",
+  "private": true,
+  "description": "Reusable modules, UI kits, and theme presets for projects scaffolded with rudis-monorepo.",
+  "type": "module",
+  "scripts": {
+    "catalog": "node scripts/catalog.mjs",
+    "check": "node scripts/check.mjs",
+    "testbed": "node scripts/testbed.mjs",
+    "sandbox": "node scripts/sandbox.mjs",
+    "kernel:sync": "node scripts/kernel-sync.mjs"
+  }
+}

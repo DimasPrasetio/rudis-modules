@@ -1,0 +1,136 @@
+{
+  "id": "auth",
+  "version": "0.7.0",
+  "kind": "fullstack",
+  "title": "Authentication",
+  "summary": "Email + password sign-in with server-side sessions (sign-out, deactivation, and a password change end them), layered sign-in limits, change your own password, and forgot-password by email; the frontend guard, sign-in and password pages, and the user menu. Fills the kernel's d.Auth.",
+  "when_to_use": [
+    "Any app where people sign in with an email and password the app checks itself."
+  ],
+  "when_not_to_use": [
+    "Sign-in only through SSO/OAuth/an identity provider.",
+    "Refresh tokens, 2FA, or passwordless sign-in are needed now — not in this version."
+  ],
+  "stacks": [
+    "go"
+  ],
+  "requires_kernel": 6,
+  "provides": {
+    "contracts": [],
+    "kernel": [
+      "auth"
+    ]
+  },
+  "ports": [
+    {
+      "name": "UserStore",
+      "required": true,
+      "description": "Find a user's credentials (bcrypt hash, active flag) by email, and a user's profile by ID — with when their password last changed, if the store tracks it.",
+      "adapters": {
+        "users": {
+          "file": "adapters/userstore_users.go",
+          "expr": "authUserStore{users: usersModule.Client()}"
+        }
+      }
+    },
+    {
+      "name": "PasswordWriter",
+      "required": false,
+      "description": "Replace a user's password once auth has checked who they are — for change-password and forgot-password. Without it both are off.",
+      "adapters": {
+        "users": {
+          "file": "adapters/passwordwriter_users.go",
+          "expr": "authPasswordWriter{users: usersModule.Client()}",
+          "requires": "0.5.0"
+        }
+      }
+    },
+    {
+      "name": "Mailer",
+      "required": false,
+      "description": "Send one email — for the forgot-password link. Without it forgot-password is off.",
+      "adapters": {
+        "mailer": {
+          "file": "adapters/mailer_mailer.go",
+          "expr": "authMailer{mail: mailerModule.Client()}"
+        }
+      }
+    }
+  ],
+  "ui": [
+    "ui-core",
+    "ui-forms",
+    "ui-feedback"
+  ],
+  "owns_tables": [
+    "auth_sessions",
+    "auth_password_resets"
+  ],
+  "env": [
+    {
+      "name": "JWT_SECRET",
+      "required": true,
+      "description": "Signs session tokens. Production: a random value of at least 32 characters (openssl rand -hex 32)."
+    },
+    {
+      "name": "JWT_EXPIRES_IN",
+      "required": false,
+      "description": "Session length as a Go duration (default 24h)."
+    },
+    {
+      "name": "APP_URL",
+      "required": false,
+      "description": "The address people open the app at (https://app.example.com) — reset links point here. Required in production when forgot-password is on."
+    }
+  ],
+  "routes": {
+    "api": [
+      "POST /api/v1/auth/login",
+      "POST /api/v1/auth/logout",
+      "GET /api/v1/auth/me",
+      "GET /api/v1/auth/options",
+      "POST /api/v1/auth/password",
+      "POST /api/v1/auth/forgot",
+      "POST /api/v1/auth/reset"
+    ],
+    "web": [
+      "/login",
+      "/forgot-password",
+      "/reset-password",
+      "/account/password"
+    ]
+  },
+  "npm_dependencies": {},
+  "go_dependencies": {
+    "github.com/golang-jwt/jwt/v5": "v5.3.1",
+    "golang.org/x/crypto": "v0.58.0"
+  },
+  "install": {
+    "api": "apps/api/internal/modules/auth",
+    "web": "apps/web/src/modules/auth"
+  },
+  "replaces": [
+    "apps/web/src/modules/auth"
+  ],
+  "register": {
+    "go": {
+      "import": "internal/modules/auth",
+      "build": [
+        "authModule, err := auth.New(d, {{port:UserStore}}, {{port:PasswordWriter}}, {{port:Mailer}})",
+        "if err != nil {",
+        "\treturn err",
+        "}"
+      ],
+      "routes": [
+        "authModule.Routes(mux)"
+      ],
+      "after": [
+        "d.Auth.Provide(authModule.Authenticator())"
+      ]
+    },
+    "web": {
+      "import": "@/modules/auth/module",
+      "export": "authModule"
+    }
+  }
+}

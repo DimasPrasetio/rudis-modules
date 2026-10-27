@@ -1,0 +1,4 @@
+version: "2"
+sql:
+  # rudis:sqlc:begin
+  # rudis:sqlc:end

@@ -1,0 +1,895 @@
+{
+  "kernel": 6,
+  "modules": [
+    {
+      "id": "app-shell",
+      "version": "0.5.0",
+      "kind": "web",
+      "title": "App shell",
+      "summary": "The frame around protected pages: collapsible sidebar built from every module's nav, inset canvas, breadcrumb header, and slots for a user menu.",
+      "when_to_use": [
+        "Back-office and admin apps with several sections reached from a sidebar."
+      ],
+      "when_not_to_use": [
+        "Public sites, single-screen tools, or full-screen modes (a POS on a tablet): give those their own layout."
+      ],
+      "stacks": [],
+      "requires_kernel": 6,
+      "provides": {
+        "contracts": [],
+        "kernel": []
+      },
+      "permissions": [],
+      "ports": [],
+      "ui": [
+        "ui-core"
+      ],
+      "go_kits": [],
+      "owns_tables": [],
+      "scoped": false,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "audit-log",
+      "version": "0.2.0",
+      "kind": "fullstack",
+      "title": "Audit log",
+      "summary": "The audit trail: fills the kernel's d.Audit, so every module's d.Audit.Record lands in one append-only table (who, what, target, before/after, IP, request ID), kept AUDIT_RETENTION_DAYS; a read-only \"Log aktivitas\" page with filters and details.",
+      "when_to_use": [
+        "Anyone must be able to answer who changed what, and when — back-office, finance, anything with more than one person editing."
+      ],
+      "when_not_to_use": [
+        "Legal-grade, tamper-evident records (signed or hash-chained) — this is an operational trail; records are written right after the change, so a crash in between can lose one."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {
+        "contracts": [],
+        "kernel": [
+          "audit"
+        ]
+      },
+      "permissions": [
+        "audit-log.read"
+      ],
+      "ports": [
+        {
+          "name": "UserDirectory",
+          "required": false,
+          "description": "Name the people in the trail. Without it they show as \"Pengguna #12\".",
+          "adapters": [
+            "users"
+          ]
+        }
+      ],
+      "ui": [
+        "ui-core",
+        "ui-data",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [],
+      "owns_tables": [
+        "audit_log"
+      ],
+      "scoped": true,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "auth",
+      "version": "0.7.0",
+      "kind": "fullstack",
+      "title": "Authentication",
+      "summary": "Email + password sign-in with server-side sessions (sign-out, deactivation, and a password change end them), layered sign-in limits, change your own password, and forgot-password by email; the frontend guard, sign-in and password pages, and the user menu. Fills the kernel's d.Auth.",
+      "when_to_use": [
+        "Any app where people sign in with an email and password the app checks itself."
+      ],
+      "when_not_to_use": [
+        "Sign-in only through SSO/OAuth/an identity provider.",
+        "Refresh tokens, 2FA, or passwordless sign-in are needed now — not in this version."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {
+        "contracts": [],
+        "kernel": [
+          "auth"
+        ]
+      },
+      "permissions": [],
+      "ports": [
+        {
+          "name": "UserStore",
+          "required": true,
+          "description": "Find a user's credentials (bcrypt hash, active flag) by email, and a user's profile by ID — with when their password last changed, if the store tracks it.",
+          "adapters": [
+            "users"
+          ]
+        },
+        {
+          "name": "PasswordWriter",
+          "required": false,
+          "description": "Replace a user's password once auth has checked who they are — for change-password and forgot-password. Without it both are off.",
+          "adapters": [
+            "users"
+          ]
+        },
+        {
+          "name": "Mailer",
+          "required": false,
+          "description": "Send one email — for the forgot-password link. Without it forgot-password is off.",
+          "adapters": [
+            "mailer"
+          ]
+        }
+      ],
+      "ui": [
+        "ui-core",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [],
+      "owns_tables": [
+        "auth_sessions",
+        "auth_password_resets"
+      ],
+      "scoped": false,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "customers",
+      "version": "0.1.0",
+      "kind": "fullstack",
+      "title": "Customers",
+      "summary": "A company's customers: code (generated or typed), party type, tax identity as Coretax needs it (NPWP 16, NIK, passport, PKP, VAT collector), billing and shipping addresses with NITKU, contacts, payment days, credit limit, on hold with a reason — deactivated, never deleted. NIK and passport masked, whole only with an access record. Offers CustomerClient (Get, Search, Usable inside a posting's d.Tx, Snapshot for documents).",
+      "when_to_use": [
+        "The app sells to known parties: sales orders, invoices, receivables, deliveries, a POS with member customers."
+      ],
+      "when_not_to_use": [
+        "Suppliers — the suppliers module.",
+        "Receivable balances, credit-limit enforcement, tax invoices — the sales, accounting, and tax modules read from this one through their ports.",
+        "One customer list shared by several companies — this module keeps each company's own."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {
+        "contracts": [
+          "CustomerClient"
+        ],
+        "kernel": []
+      },
+      "permissions": [
+        "customers.read",
+        "customers.manage",
+        "customers.credit",
+        "customers.sensitive"
+      ],
+      "ports": [],
+      "ui": [
+        "ui-core",
+        "ui-data",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [
+        "money",
+        "taxid"
+      ],
+      "owns_tables": [
+        "cust_customers",
+        "cust_addresses",
+        "cust_contacts",
+        "cust_settings"
+      ],
+      "scoped": true,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "docstate",
+      "version": "0.1.0",
+      "kind": "gokit",
+      "title": "Document lifecycle (Go kit)",
+      "summary": "The life of a business document — draft, posted, cancelled, amended — as one set of rules every document module shares: which actions each status allows, a required reason to cancel, amendment numbers (INV-0007-1), the lifecycle columns, and the guarded UPDATE that stops two people posting the same draft.",
+      "when_to_use": [
+        "A module whose documents are posted and then never edited (invoices, orders, receipts, payslips, stock moves)."
+      ],
+      "when_not_to_use": [
+        "Master data (customers, items) — it is edited and deactivated, never posted.",
+        "Multi-step approvals before posting — that is an approvals module; it runs before docstate's post."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {},
+      "permissions": [],
+      "ports": [],
+      "ui": [],
+      "go_kits": [],
+      "owns_tables": [],
+      "scoped": false,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "files",
+      "version": "0.2.0",
+      "kind": "fullstack",
+      "title": "Files",
+      "summary": "Stores uploaded files for other modules (FileClient): streamed to DATA_DIR on disk, type decided from the content (no SVG/HTML), size-capped, hashed; deleted files kept 30 days. An administrator's page lists, downloads, and deletes them.",
+      "when_to_use": [
+        "A module needs uploads: a logo, attachments, scanned documents, photos."
+      ],
+      "when_not_to_use": [
+        "Large media (video) or files that must live in object storage/CDN — not in this version.",
+        "Public file hosting: modules serve their own files and decide who may see them."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {
+        "contracts": [
+          "FileClient"
+        ],
+        "kernel": []
+      },
+      "permissions": [
+        "files.read",
+        "files.manage"
+      ],
+      "ports": [],
+      "ui": [
+        "ui-core",
+        "ui-data",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [],
+      "owns_tables": [
+        "files"
+      ],
+      "scoped": true,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "mailer",
+      "version": "0.2.0",
+      "kind": "fullstack",
+      "title": "Mailer",
+      "summary": "Sends the app's email: modules queue a message (MailClient) — inside their own transaction — and a kernel task delivers it over SMTP with retries; an outbox page shows what was sent and what failed. Development without SMTP writes email to the log.",
+      "when_to_use": [
+        "Any module needs to email people: password reset, invitations, notifications, documents."
+      ],
+      "when_not_to_use": [
+        "Bulk or marketing email — use a newsletter service; this sends one message per person, transactionally.",
+        "Attachments or inbound email are needed now — not in this version."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {
+        "contracts": [
+          "MailClient"
+        ],
+        "kernel": []
+      },
+      "permissions": [
+        "mailer.read",
+        "mailer.manage"
+      ],
+      "ports": [],
+      "ui": [
+        "ui-core",
+        "ui-data",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [],
+      "owns_tables": [
+        "mail_outbox"
+      ],
+      "scoped": false,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "money",
+      "version": "0.1.0",
+      "kind": "gokit",
+      "title": "Money (Go kit)",
+      "summary": "Exact money, quantity, and rate arithmetic for Rupiah: Amount (DECIMAL(19,2)), Qty (DECIMAL(19,4)), Rate (up to 10 decimals) as distinct types; one rounding at the end, chosen by the caller (half-up by default); allocation that always adds up to the total; id-ID formatting; database and JSON (as strings) built in.",
+      "when_to_use": [
+        "Any module that stores or computes prices, totals, taxes, discounts, quantities, or rates."
+      ],
+      "when_not_to_use": [
+        "Foreign currencies — Rupiah only in this version (the first module that needs another currency adds it).",
+        "Tax rules themselves (when DPP 11/12 applies, how PPN rounds) — those belong to a tax module, which uses this kit."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {},
+      "permissions": [],
+      "ports": [],
+      "ui": [],
+      "go_kits": [],
+      "owns_tables": [],
+      "scoped": false,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "numbering",
+      "version": "0.1.0",
+      "kind": "fullstack",
+      "title": "Numbering (document numbers)",
+      "summary": "Numbers for business documents — INV/BDG/2026/10/0007 — per company and, if chosen, per branch, restarting each year, month, or day, without gaps: a number is taken inside the posting's transaction and a rollback gives it back. Formats editable per company, previews, and raising the next number when moving from another system. Offers NumberingClient.",
+      "when_to_use": [
+        "A module posts documents that need a sequential number (invoices, orders, receipts, payslips, stock moves)."
+      ],
+      "when_not_to_use": [
+        "Tax invoice numbers (NSFP / e-Faktur) — Coretax issues those; store them with the tax module.",
+        "Codes of master data (customer, item codes) — those are typed or generated by their own module."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {
+        "contracts": [
+          "NumberingClient"
+        ],
+        "kernel": []
+      },
+      "permissions": [
+        "numbering.read",
+        "numbering.manage"
+      ],
+      "ports": [
+        {
+          "name": "Units",
+          "required": false,
+          "description": "The codes of companies and branches, and the company's branches — what {COMPANY} and {BRANCH} print and the page previews. Without it they print IDs.",
+          "adapters": [
+            "organization"
+          ]
+        }
+      ],
+      "ui": [
+        "ui-core",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [],
+      "owns_tables": [
+        "num_formats",
+        "num_counters",
+        "num_issued"
+      ],
+      "scoped": true,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "organization",
+      "version": "0.1.0",
+      "kind": "fullstack",
+      "title": "Organization (companies, branches, placements)",
+      "summary": "Several companies and their branches in one app: who is placed where, a company/branch picker in the header, and the kernel's scope resolver (d.Scope) — every request works in one company and, optionally, one branch, in its time zone. Offers OrganizationClient.",
+      "when_to_use": [
+        "One app serves several companies (legal entities), or one company with branches whose people must work only in their own branch.",
+        "Business dates must follow a branch's time zone (WIB, WITA, WIT)."
+      ],
+      "when_not_to_use": [
+        "One company with no branches — without this module every request already works in company 1.",
+        "Departments, positions, and reporting lines — those belong to an HR module."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {
+        "contracts": [
+          "OrganizationClient"
+        ],
+        "kernel": [
+          "scope"
+        ]
+      },
+      "permissions": [
+        "organization.read",
+        "organization.manage",
+        "organization.companies"
+      ],
+      "ports": [
+        {
+          "name": "UserDirectory",
+          "required": true,
+          "description": "Get users by ID or email, search them, and list every ID — to place people and show who is placed where.",
+          "adapters": [
+            "users"
+          ]
+        }
+      ],
+      "ui": [
+        "ui-core",
+        "ui-data",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [],
+      "owns_tables": [
+        "org_companies",
+        "org_branches",
+        "org_placements"
+      ],
+      "scoped": false,
+      "emits": [
+        {
+          "name": "organization.company.created",
+          "version": 1,
+          "description": "A company was created: {company_id, code, name, created_by}. Its creator is already placed across it."
+        }
+      ],
+      "listens": []
+    },
+    {
+      "id": "period",
+      "version": "0.1.0",
+      "kind": "fullstack",
+      "title": "Period (closing the books)",
+      "summary": "Closing the books per company: a date through which every area, or one area (sales, purchasing, payroll …), is closed, so documents dated in it are neither posted nor cancelled; reopening needs its own permission and a reason, audited. The fiscal year's first month per company. Offers PeriodClient.",
+      "when_to_use": [
+        "Documents are posted (invoices, receipts, payslips, stock moves) and a month, once reported, must not change."
+      ],
+      "when_not_to_use": [
+        "Only master data, no posted documents.",
+        "A lock that nobody may ever reopen (a hard lock) — not in this version."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {
+        "contracts": [
+          "PeriodClient"
+        ],
+        "kernel": []
+      },
+      "permissions": [
+        "period.read",
+        "period.manage",
+        "period.unlock"
+      ],
+      "ports": [],
+      "ui": [
+        "ui-core",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [],
+      "owns_tables": [
+        "period_locks",
+        "period_settings"
+      ],
+      "scoped": true,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "rbac",
+      "version": "0.6.0",
+      "kind": "fullstack",
+      "title": "Roles and permissions (RBAC)",
+      "summary": "Who may do what: roles hold permissions that modules declare, users hold roles per company — across it or in one branch. Fills the kernel's d.Authz (and Units for branches); Roles page with a per-module permission editor and members; Administrator role with every permission.",
+      "when_to_use": [
+        "Different people need different access: admins, staff, read-only viewers.",
+        "Any app with more than one kind of user, once auth is in."
+      ],
+      "when_not_to_use": [
+        "Every signed-in user may do everything — without rbac that is already the policy.",
+        "Access that depends on the record itself (only invoices you created): rbac grants per action and says which branches it reaches (d.Authz.Units) — filtering rows is the job of the module that owns them."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {
+        "contracts": [],
+        "kernel": [
+          "authz"
+        ]
+      },
+      "permissions": [
+        "rbac.manage"
+      ],
+      "ports": [
+        {
+          "name": "UserDirectory",
+          "required": true,
+          "description": "Get a user by ID or email, and search users by name or email — to give roles to.",
+          "adapters": [
+            "users"
+          ]
+        },
+        {
+          "name": "Placements",
+          "required": false,
+          "description": "Who is placed in which company (an organization module): an account with no role belongs where it is placed (Covers), and the member search lists the active company's people. Wired once every module is built (late).",
+          "adapters": [
+            "organization"
+          ]
+        }
+      ],
+      "ui": [
+        "ui-core",
+        "ui-data",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [],
+      "owns_tables": [
+        "roles",
+        "role_permissions",
+        "user_roles"
+      ],
+      "scoped": false,
+      "emits": [],
+      "listens": [
+        "organization.company.created"
+      ]
+    },
+    {
+      "id": "settings",
+      "version": "0.3.0",
+      "kind": "fullstack",
+      "title": "Settings",
+      "summary": "Settings per company: the company profile (name, legal name, address, NPWP, phone, email, logo) other modules use on documents (SettingsClient), and a settings page other modules add sections to (slot settings:sections). Scoped: each company keeps its own. Every change audited.",
+      "when_to_use": [
+        "The app prints or sends documents with the company's details, or needs one place for app-wide settings."
+      ],
+      "when_not_to_use": [
+        "Preferences of one user (language, layout) — keep those with the module that owns them."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {
+        "contracts": [
+          "SettingsClient"
+        ],
+        "kernel": []
+      },
+      "permissions": [
+        "settings.manage"
+      ],
+      "ports": [
+        {
+          "name": "FileStore",
+          "required": false,
+          "description": "Store the uploaded logo. Without it the logo cannot be uploaded; everything else works.",
+          "adapters": [
+            "files"
+          ]
+        }
+      ],
+      "ui": [
+        "ui-core",
+        "ui-data",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [],
+      "owns_tables": [
+        "settings"
+      ],
+      "scoped": true,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "suppliers",
+      "version": "0.1.0",
+      "kind": "fullstack",
+      "title": "Suppliers",
+      "summary": "A company's suppliers: code (generated or typed), party type, tax identity as Coretax needs it (NPWP 16, NIK, passport, PKP), addresses with NITKU, bank accounts (changed only with suppliers.sensitive, every change a security record, a warning when the holder is someone else), contacts, payment days, on hold with a reason — deactivated, never deleted. NIK, passport, and account numbers masked, whole only with an access record. Offers SupplierClient (Get, Search, Usable inside a posting's d.Tx, Snapshot, DefaultBankAccount).",
+      "when_to_use": [
+        "The app buys from known parties: purchase orders, bills, payables, payments, goods receipts."
+      ],
+      "when_not_to_use": [
+        "Customers — the customers module.",
+        "Payables, withholding (PPh 23/4(2)/21/26) and tax certificates (SKB, PP 55/PP 20/2026) — the purchasing, accounting, and tax modules read from this one through their ports.",
+        "One supplier list shared by several companies — this module keeps each company's own."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {
+        "contracts": [
+          "SupplierClient"
+        ],
+        "kernel": []
+      },
+      "permissions": [
+        "suppliers.read",
+        "suppliers.manage",
+        "suppliers.sensitive"
+      ],
+      "ports": [],
+      "ui": [
+        "ui-core",
+        "ui-data",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [
+        "taxid"
+      ],
+      "owns_tables": [
+        "supp_suppliers",
+        "supp_addresses",
+        "supp_bank_accounts",
+        "supp_contacts",
+        "supp_settings"
+      ],
+      "scoped": true,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "taxid",
+      "version": "0.1.0",
+      "kind": "gokit",
+      "title": "Tax IDs (Go kit)",
+      "summary": "Indonesian tax identities: the 16-digit NPWP (old 15-digit ones normalized with a leading 0), the NIK as an individual's NPWP (length, region, birth date), the 22-digit NITKU of a place of business, passport numbers, an unofficial NPWP check digit as a warning, and masking for display. Formats only — registration is DJP's to confirm.",
+      "when_to_use": [
+        "A module stores or checks an NPWP, NIK, NITKU, or passport number — customers, suppliers, employees, the company profile."
+      ],
+      "when_not_to_use": [
+        "Confirming that a number is registered or that a party is a PKP — only Coretax/DJP can.",
+        "Tax calculations (PPN, PPh) — a tax module's."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {},
+      "permissions": [],
+      "ports": [],
+      "ui": [],
+      "go_kits": [],
+      "owns_tables": [],
+      "scoped": false,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "ui-core",
+      "version": "0.4.0",
+      "kind": "ui",
+      "title": "UI core kit",
+      "summary": "Bingkai Navy foundation every screen uses: the restyled shadcn primitives, page layout (Page, PageHeader, SectionCard, SummaryCard), StatusBadge with fixed tones, Notice, empty/error/404 states, skeletons, DescriptionList, Money/Qty/DocNumber, Modal, FormSheet, and id-ID formatters.",
+      "when_to_use": [
+        "Any project with screens — every other kit and every module with a frontend builds on it."
+      ],
+      "when_not_to_use": [
+        "Never skipped when a module has a frontend."
+      ],
+      "stacks": [],
+      "requires_kernel": 6,
+      "provides": {
+        "contracts": [],
+        "kernel": []
+      },
+      "permissions": [],
+      "ports": [],
+      "ui": [],
+      "go_kits": [],
+      "owns_tables": [],
+      "scoped": false,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "ui-data",
+      "version": "0.2.0",
+      "kind": "ui",
+      "title": "UI data kit",
+      "summary": "Lists and tables: DataTable (sort, selection with a bulk-action bar, column chooser, built-in loading/empty/error), Pagination, Toolbar with filter chips, FilterBar, SearchInput (debounced), ActionMenu (⋯), NavTabs.",
+      "when_to_use": [
+        "Any screen that lists records."
+      ],
+      "when_not_to_use": [
+        "A screen with no list or table."
+      ],
+      "stacks": [],
+      "requires_kernel": 3,
+      "provides": {
+        "contracts": [],
+        "kernel": []
+      },
+      "permissions": [],
+      "ports": [],
+      "ui": [
+        "ui-core"
+      ],
+      "go_kits": [],
+      "owns_tables": [],
+      "scoped": false,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "ui-feedback",
+      "version": "0.1.0",
+      "kind": "ui",
+      "title": "UI feedback kit",
+      "summary": "Telling people what happened: toasts (notify), ConfirmDialog, ReasonDialog, a global loading bar for running requests, and an error boundary with a crash card — mounted once through its provider.",
+      "when_to_use": [
+        "Every app with a frontend: confirmations, toasts, and a crash screen instead of a blank page."
+      ],
+      "when_not_to_use": [
+        "Never skipped when a module asks for confirmation or shows toasts."
+      ],
+      "stacks": [],
+      "requires_kernel": 3,
+      "provides": {
+        "contracts": [],
+        "kernel": []
+      },
+      "permissions": [],
+      "ports": [],
+      "ui": [
+        "ui-core",
+        "ui-forms"
+      ],
+      "go_kits": [],
+      "owns_tables": [],
+      "scoped": false,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "ui-forms",
+      "version": "0.2.0",
+      "kind": "ui",
+      "title": "UI forms kit",
+      "summary": "Forms: FormField, PasswordInput, DigitsInput, AddressFields, SearchSelect, AsyncSearchSelect (server search, paging), HierarchicalSelect (tree), Segmented, MultiToggle, DateRangeFields, KeyValueEditor, FieldHint, FormSection/FieldGrid/StickyFooter/ActionRow, LineItemsEditor, FileDropzone, Stepper.",
+      "when_to_use": [
+        "Any screen where people enter or edit data."
+      ],
+      "when_not_to_use": [
+        "Read-only screens."
+      ],
+      "stacks": [],
+      "requires_kernel": 3,
+      "provides": {
+        "contracts": [],
+        "kernel": []
+      },
+      "permissions": [],
+      "ports": [],
+      "ui": [
+        "ui-core"
+      ],
+      "go_kits": [],
+      "owns_tables": [],
+      "scoped": false,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "ui-gallery",
+      "version": "0.1.1",
+      "kind": "web",
+      "title": "UI gallery",
+      "summary": "A development page (/ui-gallery) showing every component of the four UI kits in all its variants — to check a preset, compare designs, and pick components.",
+      "when_to_use": [
+        "In the library's testbed and while developing: to see the kits under the project's theme."
+      ],
+      "when_not_to_use": [
+        "In a production app — it is a developer tool; remove it before release."
+      ],
+      "stacks": [],
+      "requires_kernel": 3,
+      "provides": {
+        "contracts": [],
+        "kernel": []
+      },
+      "permissions": [],
+      "ports": [],
+      "ui": [
+        "ui-core",
+        "ui-data",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [],
+      "owns_tables": [],
+      "scoped": false,
+      "emits": [],
+      "listens": []
+    },
+    {
+      "id": "users",
+      "version": "0.7.0",
+      "kind": "fullstack",
+      "title": "Users",
+      "summary": "The people who can sign in: list, search, add, edit, deactivate; each person's own profile page; first-user bootstrap from env. Offers UserClient (incl. SetPassword for an auth provider, IDs); every change audited; guarded by users.read / users.manage. With an organization module, its pages show the active company's people.",
+      "when_to_use": [
+        "Any app where people sign in with an account the app itself stores."
+      ],
+      "when_not_to_use": [
+        "Sign-in through an external identity provider only (SSO/OAuth) with no local accounts."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {
+        "contracts": [
+          "UserClient"
+        ],
+        "kernel": []
+      },
+      "permissions": [
+        "users.read",
+        "users.manage"
+      ],
+      "ports": [
+        {
+          "name": "Placements",
+          "required": false,
+          "description": "Who is placed in which company (an organization module). With it the users pages show only the people placed in the active company, and a new user is placed where they were created. Wired once every module is built (late).",
+          "adapters": [
+            "organization"
+          ]
+        }
+      ],
+      "ui": [
+        "ui-core",
+        "ui-data",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [],
+      "owns_tables": [
+        "users"
+      ],
+      "scoped": false,
+      "emits": [],
+      "listens": []
+    }
+  ],
+  "presets": [
+    {
+      "id": "bingkai-navy",
+      "version": "0.1.1",
+      "title": "Bingkai Navy",
+      "summary": "Dense back-office look: dark-navy frame around a light canvas, navy brand, Inter + Plus Jakarta Sans + Geist Mono, 14px base.",
+      "when_to_use": [
+        "Back-office and admin apps used for hours a day on desktop: ERP, inventory, finance, HR, internal tools.",
+        "Data-dense screens: tables, documents, forms with many fields."
+      ],
+      "when_not_to_use": [
+        "Public or marketing pages, consumer apps, and touch-first screens (POS on a tablet): research their own direction."
+      ]
+    }
+  ]
+}
