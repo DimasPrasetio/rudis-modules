@@ -1,9 +1,9 @@
 {
   "id": "taxid",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "kind": "gokit",
   "title": "Tax IDs (Go kit)",
-  "summary": "Indonesian tax identities: the 16-digit NPWP (old 15-digit ones normalized with a leading 0), the NIK as an individual's NPWP (length, region, birth date), the 22-digit NITKU of a place of business, passport numbers, an unofficial NPWP check digit as a warning, and masking for display. Formats only — registration is DJP's to confirm.",
+  "summary": "Indonesian tax identities: the 16-digit NPWP (old 15-digit ones normalized with a leading 0; one not starting with 0 checked as the NIK it is; the all-zero placeholder refused), the NIK (length, the 38 province codes, region, birth date), the 22-digit NITKU and the head office's default, passport and Coretax 'Other' document numbers, which IDs name a person, an unofficial NPWP check digit as a warning, and masking for display. Formats only — registration is DJP's to confirm.",
   "when_to_use": [
     "A module stores or checks an NPWP, NIK, NITKU, or passport number — customers, suppliers, employees, the company profile."
   ],

@@ -66,10 +66,11 @@ function valuesOf(c: Customer): CustomerValues {
   };
 }
 
-/** Which tax IDs fit a party: an NPWP for a company, a NIK or NPWP for a person, a passport abroad. */
+/** Which tax IDs fit a party: an NPWP for a company, a NIK or NPWP for a person, a passport abroad,
+ * another document (Coretax "Other") when none of those is at hand. */
 function kindsFor(party: PartyType, foreign: boolean): TaxIDKind[] {
-  if (foreign) return party === "individual" ? ["passport", "none"] : ["none", "npwp"];
-  if (party === "individual") return ["nik", "npwp", "none"];
+  if (foreign) return party === "individual" ? ["passport", "other", "none"] : ["none", "npwp", "other"];
+  if (party === "individual") return ["nik", "npwp", "other", "none"];
   return ["npwp", "none"];
 }
 
@@ -243,16 +244,20 @@ export function CustomerFormSheet({ open, onClose, customer, canCredit = true, o
                   masked
                     ? "Tersamar — biarkan untuk tetap memakai nomor yang tersimpan."
                     : values.tax_id_kind === "npwp"
-                      ? "16 digit; NPWP lama 15 digit diubah otomatis."
+                      ? values.party_type === "individual"
+                        ? "16 digit; NPWP perorangan adalah NIK-nya."
+                        : "16 digit; NPWP lama 15 digit diubah otomatis."
                       : values.tax_id_kind === "nik"
                         ? "16 digit NIK — berlaku sebagai NPWP perorangan."
-                        : undefined
+                        : values.tax_id_kind === "other"
+                          ? "Nomor dokumen 3–30 huruf, angka, . / -; tidak bisa sebagai PKP."
+                          : undefined
                 }
               >
                 {digits && !masked ? (
                   <DigitsInput value={values.tax_id} onChange={set("tax_id")} maxDigits={16} groups={[4, 4, 4, 4]} />
                 ) : (
-                  <Input value={values.tax_id} onChange={(e) => set("tax_id")(e.target.value.toUpperCase())} maxLength={20} />
+                  <Input value={values.tax_id} onChange={(e) => set("tax_id")(e.target.value.toUpperCase())} maxLength={values.tax_id_kind === "other" ? 30 : 20} />
                 )}
               </FormField>
             )}

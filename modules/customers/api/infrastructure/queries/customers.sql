@@ -9,7 +9,11 @@ WHERE company_id = sqlc.arg(company_id)
     OR code LIKE CONCAT('%', sqlc.arg(search), '%')
     OR name LIKE CONCAT('%', sqlc.arg(search), '%')
     OR legal_name LIKE CONCAT('%', sqlc.arg(search), '%')
-    OR tax_id LIKE CONCAT(sqlc.arg(search), '%'))
+    -- tax_search is never empty (the service sends a NUL that matches nothing): a person's ID
+    -- matches only whole, a prefix only an NPWP of a company or government body
+    OR tax_id = sqlc.arg(tax_search)
+    OR (tax_id_kind = 'npwp' AND party_type <> 'individual' AND tax_id LIKE '0%'
+      AND tax_id LIKE CONCAT(sqlc.arg(tax_search), '%')))
 ORDER BY name, id
 LIMIT ? OFFSET ?;
 
@@ -24,7 +28,11 @@ WHERE company_id = sqlc.arg(company_id)
     OR code LIKE CONCAT('%', sqlc.arg(search), '%')
     OR name LIKE CONCAT('%', sqlc.arg(search), '%')
     OR legal_name LIKE CONCAT('%', sqlc.arg(search), '%')
-    OR tax_id LIKE CONCAT(sqlc.arg(search), '%'));
+    -- tax_search is never empty (the service sends a NUL that matches nothing): a person's ID
+    -- matches only whole, a prefix only an NPWP of a company or government body
+    OR tax_id = sqlc.arg(tax_search)
+    OR (tax_id_kind = 'npwp' AND party_type <> 'individual' AND tax_id LIKE '0%'
+      AND tax_id LIKE CONCAT(sqlc.arg(tax_search), '%')));
 
 -- name: SearchActiveCustomers :many
 SELECT * FROM cust_customers
@@ -32,7 +40,11 @@ WHERE company_id = sqlc.arg(company_id) AND is_active = TRUE
   AND (code LIKE CONCAT(sqlc.arg(search), '%')
     OR name LIKE CONCAT('%', sqlc.arg(search), '%')
     OR legal_name LIKE CONCAT('%', sqlc.arg(search), '%')
-    OR tax_id LIKE CONCAT(sqlc.arg(search), '%'))
+    -- tax_search is never empty (the service sends a NUL that matches nothing): a person's ID
+    -- matches only whole, a prefix only an NPWP of a company or government body
+    OR tax_id = sqlc.arg(tax_search)
+    OR (tax_id_kind = 'npwp' AND party_type <> 'individual' AND tax_id LIKE '0%'
+      AND tax_id LIKE CONCAT(sqlc.arg(tax_search), '%')))
 ORDER BY name, id
 LIMIT ?;
 

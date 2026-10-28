@@ -86,7 +86,7 @@ func toDTO(c domain.Supplier) supplierDTO {
 	return supplierDTO{
 		ID: c.ID, Code: c.Code, Name: c.Name, LegalName: c.LegalName, PartyType: string(c.PartyType), IsForeign: c.IsForeign,
 		Country: c.Country, TaxIDKind: string(c.TaxIDKind), TaxID: c.TaxID,
-		TaxIDMasked: c.TaxIDKind == taxid.NIK || c.TaxIDKind == taxid.Passport,
+		TaxIDMasked: c.TaxIDIsPersonal(),
 		IsPKP:       c.IsPKP, Email: c.Email, Phone: c.Phone, PaymentDays: c.PaymentDays,
 		OnHold: c.OnHold, HoldReason: c.HoldReason, Notes: c.Notes, IsActive: c.IsActive,
 		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,

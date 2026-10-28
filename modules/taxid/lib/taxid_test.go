@@ -2,6 +2,7 @@ package taxid
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -9,14 +10,19 @@ func TestNormalizeNPWP(t *testing.T) {
 	for in, want := range map[string]string{
 		"01.234.567.8-901.000": "0012345678901000", // the old 15 digits get a leading 0
 		"012345678901000":      "0012345678901000",
-		"3201234567890001":     "3201234567890001",
+		"3201011508900001":     "3201011508900001", // a resident's NIK used as NPWP
+		"3201-0115-0890-0001":  "3201011508900001",
 		" 0012 3456 7890 1000": "0012345678901000",
 	} {
 		if got, err := NormalizeNPWP(in); err != nil || got != want {
 			t.Errorf("NormalizeNPWP(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
-	for _, in := range []string{"", "123", "01234567890100", "00123456789010001", "0123456789O1000", "01.234.567.8-901.00a"} {
+	for _, in := range []string{"", "123", "01234567890100", "00123456789010001", "0123456789O1000", "01.234.567.8-901.00a",
+		"0000000000000000", "000000000000000", // Coretax's placeholder for a buyer without an NPWP
+		"3201234567890001", // 16 digits not starting with 0 that are no NIK (month 67)
+		"9901011508900001", // …nor a province
+	} {
 		if _, err := NormalizeNPWP(in); !errors.Is(err, ErrFormat) {
 			t.Errorf("NormalizeNPWP(%q) = %v; want ErrFormat", in, err)
 		}
@@ -37,6 +43,10 @@ func TestCheckNIK(t *testing.T) {
 	for _, in := range []string{
 		"320101150890000",  // 15 digits
 		"0001011508900001", // no province
+		"9901011508900001", // province 99 does not exist
+		"2001011508900001", // …nor 20
+		"3200011508900001", // no kabupaten/kota
+		"3201001508900001", // no kecamatan
 		"3201011508900000", // serial 0000
 		"3201013208900001", // day 32
 		"3201017208900001", // a woman's day 32
@@ -113,5 +123,87 @@ func TestKindValid(t *testing.T) {
 	}
 	if Kind("ktp").Valid() {
 		t.Error("an unknown kind is valid")
+	}
+}
+
+func TestCheckNIKProvinces(t *testing.T) {
+	for _, p := range []string{"11", "21", "36", "65", "76", "82", "91", "96"} {
+		if _, err := CheckNIK(p + "01011508900001"); err != nil {
+			t.Errorf("province %s: %v", p, err)
+		}
+	}
+	if len(provinces) != 38 {
+		t.Errorf("provinces = %d, want the 38 of Kepmendagri 300.2.2-2138/2025", len(provinces))
+	}
+}
+
+func TestKinds(t *testing.T) {
+	for _, k := range []Kind{NPWP, NIK, Passport, Other, None} {
+		if !k.Valid() {
+			t.Errorf("%q not valid", k)
+		}
+	}
+	if Kind("tin").Valid() {
+		t.Error("unknown kind valid")
+	}
+	for k, want := range map[Kind]bool{NPWP: true, NIK: true, Passport: false, Other: false, None: false} {
+		if k.TakesNITKU() != want {
+			t.Errorf("%q.TakesNITKU() = %v", k, !want)
+		}
+	}
+}
+
+func TestIdentifiesPerson(t *testing.T) {
+	for _, c := range []struct {
+		k    Kind
+		id   string
+		want bool
+	}{
+		{NPWP, "0013024427092000", false}, // a company's NPWP is no personal data
+		{NPWP, "3201011508900001", true},  // …a NIK used as NPWP is
+		{NIK, "3201011508900001", true},
+		{Passport, "A1234567", true},
+		{Other, "KITAS123", true},
+		{None, "", false},
+	} {
+		if got := IdentifiesPerson(c.k, c.id); got != c.want {
+			t.Errorf("IdentifiesPerson(%q, %q) = %v", c.k, c.id, got)
+		}
+	}
+}
+
+func TestNITKUHelpers(t *testing.T) {
+	if got := DefaultNITKU("0013024427092000"); got != "0013024427092000000000" {
+		t.Errorf("DefaultNITKU = %q", got)
+	}
+	if !NITKUOf("0013024427092000000001", "0013024427092000") || NITKUOf("0099999999999999000001", "0013024427092000") || NITKUOf("001302442709200000000", "0013024427092000") {
+		t.Error("NITKUOf")
+	}
+}
+
+func TestCheckOther(t *testing.T) {
+	if got, err := CheckOther(" kitas 2c11/ab-123 "); err != nil || got != "KITAS2C11/AB-123" {
+		t.Errorf("CheckOther = %q, %v", got, err)
+	}
+	for _, in := range []string{"", "ab", strings.Repeat("A", 31), "AB#12"} {
+		if _, err := CheckOther(in); !errors.Is(err, ErrFormat) {
+			t.Errorf("CheckOther(%q) = %v; want ErrFormat", in, err)
+		}
+	}
+}
+
+func TestSearchForm(t *testing.T) {
+	for in, want := range map[string]string{
+		"01.302.442.7-092.000": "0013024427092000",
+		"01.302.442.7":         "0013024427", // the start of an old NPWP, written the old way
+		"3201.0115":            "32010115",   // a NIK in groups is no old NPWP
+		"0013":                 "0013",
+		" a1234567 ":           "A1234567",
+		"":                     "",
+		"Toko Maju":            "TOKOMAJU",
+	} {
+		if got := SearchForm(in); got != want {
+			t.Errorf("SearchForm(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

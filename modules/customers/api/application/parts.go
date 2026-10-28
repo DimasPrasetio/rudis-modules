@@ -3,11 +3,14 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
+	"strings"
 
 	"__GO_MODULE__/internal/kernel"
 	"__GO_MODULE__/internal/modules/customers/domain"
 	"__GO_MODULE__/internal/shared/apperror"
+	"__GO_MODULE__/internal/shared/taxid"
 	"__GO_MODULE__/internal/shared/validator"
 )
 
@@ -159,7 +162,7 @@ func (s *Service) Get(ctx context.Context, id int64) (domain.Customer, error) {
 // Search finds up to limit (1–50) active customers whose code, name, or tax ID matches q.
 func (s *Service) Search(ctx context.Context, q string, limit int) ([]domain.Customer, error) {
 	limit = max(1, min(limit, 50))
-	rows, err := s.repo.Search(ctx, company(ctx), q, limit)
+	rows, err := s.repo.Search(ctx, company(ctx), strings.TrimSpace(q), taxSearch(q), limit)
 	for i := range rows {
 		rows[i] = Masked(rows[i])
 	}
@@ -197,10 +200,13 @@ func (s *Service) Snapshot(ctx context.Context, id, addressID int64) (domain.Cus
 	}
 	if addressID != 0 {
 		a, err := s.repo.Address(ctx, co, id, addressID)
+		if err == nil && !a.IsActive {
+			err = ErrNotFound // an inactive address is not one a new document may print
+		}
 		if err != nil {
 			return c, domain.Address{}, errors.Join(err, errors.New("customers: address "+strconv.FormatInt(addressID, 10)))
 		}
-		return c, a, nil
+		return c, a, consistent(c, a)
 	}
 	addrs, err := s.repo.Addresses(ctx, co, id)
 	if err != nil {
@@ -212,11 +218,22 @@ func (s *Service) Snapshot(ctx context.Context, id, addressID int64) (domain.Cus
 			continue
 		}
 		if a.IsDefaultBilling {
-			return c, a, nil
+			return c, a, consistent(c, a)
 		}
 		if pick.ID == 0 {
 			pick = a
 		}
 	}
-	return c, pick, nil
+	return c, pick, consistent(c, pick)
+}
+
+// ErrInconsistent is a customer whose tax data a document cannot print as it stands: an address's
+// NITKU that does not belong to the customer's NPWP (saved before the NPWP changed).
+var ErrInconsistent = errors.New("customers: tax data inconsistent")
+
+func consistent(c domain.Customer, a domain.Address) error {
+	if a.NITKU != "" && !taxid.NITKUOf(a.NITKU, c.TaxIDForNITKU()) {
+		return fmt.Errorf("%w: address %d's NITKU is not the customer's NPWP", ErrInconsistent, a.ID)
+	}
+	return nil
 }
