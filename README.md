@@ -10,7 +10,7 @@ everything here, with when to use each piece and what it needs.
 **Developing modules?** This repository is all you need. Read, in order:
 
 1. [STATUS.md](STATUS.md) — where the library stands: modules, versions, test coverage, work in
-   progress, what is proposed next, known limits, and the log.
+   progress, known limits, and the log; [ROADMAP.md](ROADMAP.md) — what to build next.
 2. [AGENTS.md](AGENTS.md) — the locked architecture and every rule, with the check that enforces it.
 3. [docs/BUILDING_MODULES.md](docs/BUILDING_MODULES.md) — building a module from idea to release.
 4. [docs/MODULE_FORMAT.md](docs/MODULE_FORMAT.md) — `module.json`; [kernel/](kernel/README.md) —

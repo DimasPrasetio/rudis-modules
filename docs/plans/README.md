@@ -17,6 +17,7 @@ A plan has, in this order:
 8. After building: **Hasil pembangunan / Results** — what was built, deviations with reasons,
    review findings and their fixes, accepted limits.
 
+Which module to plan next comes from [ROADMAP.md](../../ROADMAP.md).
+
 | Plan | Modules | Status |
 |---|---|---|
-| [PLAN-MODUL-BERSAMA](PLAN-MODUL-BERSAMA.md) | `approvals`, `notifications`, `data-import`, `attachments`, `payments`, `fieldcrypt`, `pdfdoc` | disetujui K1–K12 — belum dibangun |

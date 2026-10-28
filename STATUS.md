@@ -71,9 +71,7 @@ check fails, say so here rather than leaving the last good run standing.
 
 ## In progress
 
-Nothing is being built yet. The shared ERP/HRMIS modules — `approvals`, `notifications`,
-`data-import`, `attachments`, `payments`, Go kits `fieldcrypt` and `pdfdoc` — are designed
-in [PLAN-MODUL-BERSAMA](docs/plans/PLAN-MODUL-BERSAMA.md) (decisions approved, no code yet).
+Nothing is being built.
 
 When you start a module (on its branch — [docs/BUILDING_MODULES.md](docs/BUILDING_MODULES.md)
 › Working across several commits), add a line here: what, who, the branch, and the plan in
@@ -81,18 +79,9 @@ When you start a module (on its branch — [docs/BUILDING_MODULES.md](docs/BUILD
 
 ## Next
 
-Proposals, not commitments — none is started. Each begins as a plan in `docs/plans/` that the
-maintainer approves before it is built. They are ordered by what they depend on.
-
-| Candidate | What | Builds on | Notes |
-|---|---|---|---|
-| `items` | Products and services: codes, units and unit conversions, prices | `money` (prices, `Qty`) | Master data: edited and deactivated, never posted |
-| `payment-terms` | Shared payment-terms master: installments, early-payment discount | — | Optional port in `customers`/`suppliers`; replaces their `payment_days` when `sales` needs more |
-| `sales` | Quotations, orders, invoices | `money`, `docstate`, ports to `numbering`, `period`, `items`, `customers` | The first real consumer of the document foundations; the testbed fixture `fixinvoice` is its sketch |
-| `purchasing` | Purchase orders, bills | same as `sales`, with `suppliers` in place of `customers` | |
-| `inventory` | Warehouses, stock moves, valuation | `items`, `money` (`Qty`), `docstate`; hears `sales`/`purchasing` posted events | |
-| `tax` | PPN (incl. DPP 11/12, PMK 131/2024), Coretax e-Faktur numbers | `money` | Rounding rules must come from the regulation, not from the kit |
-| `accounting` | Chart of accounts, journals, ledger | `money`, `period`; hears posted/cancelled events | |
+What gets built next, and in which order, is [ROADMAP.md](ROADMAP.md): the module candidates
+with their kind, ports and wave, ticked off as they are released. Pick from its earliest open
+wave; each module still starts as a plan in `docs/plans/` that the maintainer approves.
 
 ## Known limits
 
@@ -126,6 +115,11 @@ fixed; add one when you accept a limit.
 
 Newest first. One entry per change that released something or changed how the library works:
 date, what, the tags it created.
+
+- **28 Oct 2026 — ROADMAP.md: 50 modules to build.**
+  - The old module plans (PLAN-MODUL-BERSAMA) and the candidate table under Next were removed;
+    [ROADMAP.md](ROADMAP.md) now lists the 50 modules in seven waves, from internet research, and
+    is ticked off as modules are released.
 
 - **27 Oct 2026 — rudis-modules, first version.**
   - Started from the existing module library as a fresh repository: 21 modules, 1 preset, kernel 6.

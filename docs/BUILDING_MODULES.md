@@ -24,7 +24,8 @@ and the kernel a module builds on — pinned, read-only — in [`kernel/`](../ke
    | golang-migrate | `npm run migrate:up` in a sandbox (the testbed installs its own) | `go install -tags mysql github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1` |
    | `air` | `npm run dev:api` in a sandbox (hot reload) | `go install github.com/air-verse/air@latest` |
 
-4. A module that owns tables, needs ports, or holds business rules starts as a **plan**:
+4. Pick the module from the earliest open wave of [ROADMAP.md](../ROADMAP.md) (a module not on
+   it is added there first). A module that owns tables, needs ports, or holds business rules starts as a **plan**:
    `docs/plans/PLAN-<NAME>.md`, in the shape [docs/plans/README.md](plans/README.md) gives. Open a
    pull request with the plan and an **In progress** line in STATUS.md; the maintainer's review
    of that pull request (`docs/plans/` is code-owned) is the approval. Build after it is merged.
