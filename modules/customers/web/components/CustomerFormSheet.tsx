@@ -9,6 +9,7 @@ import { Textarea } from "@/shared/components/primitives/textarea";
 import { FormSheet } from "@/shared/components/ui/form-sheet";
 import { Notice } from "@/shared/components/ui/notice";
 import { DigitsInput } from "@/shared/components/ui/digits-input";
+import { MoneyInput } from "@/shared/components/ui/money-input";
 import { FieldGrid } from "@/shared/components/ui/form-layout";
 import { FormField } from "@/shared/components/ui/form-field";
 import { SearchSelect } from "@/shared/components/ui/search-select";
@@ -306,17 +307,12 @@ export function CustomerFormSheet({ open, onClose, customer, canCredit = true, o
                 disabled={!canCredit}
               />
             </FormField>
-            <FormField label="Batas kredit (Rp)" error={errors.credit_limit} hint="Kosong: tanpa batas. Ditegakkan oleh modul penjualan.">
-              <Input
-                inputMode="decimal"
-                value={values.credit_limit ?? ""}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/[^0-9.]/g, "");
-                  set("credit_limit")(v === "" ? null : v);
-                }}
-                maxLength={20}
+            <FormField label="Batas kredit" error={errors.credit_limit} hint="Kosong: tanpa batas. Ditegakkan oleh modul penjualan.">
+              <MoneyInput
+                value={values.credit_limit}
+                onChange={set("credit_limit")}
+                fractionDigits={2}
                 disabled={!canCredit}
-                className="tabular-nums"
               />
             </FormField>
           </FieldGrid>

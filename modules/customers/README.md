@@ -83,7 +83,8 @@ Store `customer_id` as a plain ID (no foreign key). A web page of yours may call
   Search matches a person's ID only whole (no prefix oracle on masked numbers); a company's NPWP
   by prefix as typed. A changed NPWP moves default NITKUs and refuses stale custom ones;
   `Snapshot` refuses an inconsistent NITKU (`ErrInconsistent`, new in `CustomerClient`) or an
-  inactive address asked for by ID.
+  inactive address asked for by ID. The credit limit is typed with `MoneyInput` (ui-forms 0.3.0):
+  "50.000.000" means fifty million, no longer a refused or misread decimal.
 - **0.1.0** — first version: customers with tax identity, addresses with NITKU, contacts,
   terms and credit limit, hold, generated codes, masked personal data with audited reveal,
   `CustomerClient`.
