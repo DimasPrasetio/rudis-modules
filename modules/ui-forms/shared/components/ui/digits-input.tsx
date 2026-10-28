@@ -3,7 +3,7 @@ import type { ComponentProps } from "react";
 import { cn } from "cn";
 import { FIELD } from "@/shared/lib/field-classes";
 
-export interface DigitsInputProps extends Omit<ComponentProps<"input">, "value" | "onChange" | "type" | "inputMode"> {
+export interface DigitsInputProps extends Omit<ComponentProps<"input">, "value" | "onChange" | "type"> {
   /** Digits only. */
   value: string;
   onChange: (digits: string) => void;
@@ -36,10 +36,12 @@ export function DigitsInput({ value, onChange, maxDigits, groups, className, onF
   const shown = !focused && groups?.length ? groupDigits(value, groups) : value;
   return (
     <input
-      {...props}
-      type="text"
+      // Defaults a caller may override: autoComplete="one-time-code" for an OTP, "tel-national"
+      // for a phone (WCAG 2.2 · 1.3.5, 3.3.8 — a password manager or the phone fills it in).
       inputMode="numeric"
       autoComplete="off"
+      {...props}
+      type="text"
       value={shown}
       onFocus={(e) => {
         setFocused(true);

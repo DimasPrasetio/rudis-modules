@@ -1,7 +1,8 @@
 import type { NavItem } from "@/shared/composition";
 
-/** The app's name, taken from <title> (index.html) so the shell needs no configuration. */
-export const appName = document.title || "App";
+/** The app's name, taken from <title> (index.html) so the shell needs no configuration. Pages rename
+ *  the tab (ui-core PageHeader), so the name read before any of them is the one kept. */
+export { appName } from "@/shared/components/ui/page-header";
 
 /** The entry whose path is the longest prefix of pathname — "/users/42" activates "/users". */
 export function activeNavItem(items: NavItem[], pathname: string): NavItem | undefined {

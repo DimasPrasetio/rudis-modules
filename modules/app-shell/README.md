@@ -22,6 +22,10 @@ and builds on `ui-core` (breadcrumb, separator, sheet, tooltip).
 
 ## Changes
 
+- **0.6.0** — a "Lewati ke konten utama" skip link is the first stop of the keyboard and moves
+  focus past the sidebar and the header to the page (WCAG 2.2 · 2.4.1); the active sidebar item
+  carries `aria-current="page"`; the app's name comes from ui-core (read before pages rename the
+  tab).
 - **0.5.0** — needs kernel 6. Renders the `"shell:scope"` slot (an organization module's
   company/branch picker) at the right of the header, before `"header-end"`.
 - **0.4.0** — the sidebar shows placeholders until the user's permissions have loaded, instead of

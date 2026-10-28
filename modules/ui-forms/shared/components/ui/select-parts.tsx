@@ -4,6 +4,7 @@ import { Check, ChevronDown, X } from "lucide-react";
 import { Popover } from "radix-ui";
 import { cn } from "cn";
 import { FIELD } from "@/shared/lib/field-classes";
+import { FOCUS_RING } from "@/shared/lib/focus";
 
 // The parts every searchable select is built from (SearchSelect, AsyncSearchSelect,
 // HierarchicalSelect): one trigger look, one popover, one keyboard model. Built on Radix
@@ -34,48 +35,45 @@ export interface SelectTriggerProps extends Omit<ComponentProps<"button">, "chil
   onClear?: () => void;
 }
 
-/** The closed select: looks like every other field, chevron turns when open. */
+/**
+ * The closed select: looks like every other field, chevron turns when open. The clear control is
+ * a real button beside the trigger, not inside it — a button may not hold another interactive
+ * element (HTML content model; screen readers and keyboards would not reach it). className lays
+ * out the whole field.
+ */
 export const SelectTrigger = forwardRef<HTMLButtonElement, SelectTriggerProps>(function SelectTrigger(
   { label, empty, open, onClear, className, ...props },
   ref,
 ) {
   return (
-    <Popover.Trigger asChild>
-      <button
-        ref={ref}
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className={cn(FIELD, "flex cursor-pointer items-center justify-between gap-2 text-left disabled:opacity-70", className)}
-        {...props}
-      >
-        <span className={cn("min-w-0 flex-1 truncate", empty ? "text-muted-foreground" : "text-foreground")}>{label}</span>
-        <span className="flex shrink-0 items-center gap-1">
-          {onClear && (
-            <span
-              role="button"
-              tabIndex={0}
-              aria-label="Hapus pilihan"
-              className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClear();
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onClear();
-                }
-              }}
-            >
-              <X size={14} aria-hidden />
-            </span>
+    <div className={cn("relative w-full min-w-0", className)}>
+      <Popover.Trigger asChild>
+        <button
+          ref={ref}
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          className={cn(FIELD, "flex cursor-pointer items-center justify-between gap-2 text-left disabled:opacity-70", onClear && "pr-14")}
+          {...props}
+        >
+          <span className={cn("min-w-0 flex-1 truncate", empty ? "text-muted-foreground" : "text-foreground")}>{label}</span>
+          <ChevronDown size={16} aria-hidden className={cn("shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+        </button>
+      </Popover.Trigger>
+      {onClear && (
+        <button
+          type="button"
+          aria-label="Hapus pilihan"
+          onClick={onClear}
+          className={cn(
+            "absolute top-1/2 right-8 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground",
+            FOCUS_RING,
           )}
-          <ChevronDown size={16} aria-hidden className={cn("text-muted-foreground transition-transform", open && "rotate-180")} />
-        </span>
-      </button>
-    </Popover.Trigger>
+        >
+          <X size={14} aria-hidden />
+        </button>
+      )}
+    </div>
   );
 });
 
@@ -175,7 +173,7 @@ export function SelectOptionButton({
       disabled={option.disabled}
       onClick={onChoose}
       className={cn(
-        "flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors enabled:hover:bg-background focus-visible:bg-background focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-55",
+        "flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors enabled:hover:bg-accent focus-visible:bg-accent focus-visible:outline-solid focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-55",
         active && "bg-primary/10 font-medium text-primary enabled:hover:bg-primary/10",
         className,
       )}

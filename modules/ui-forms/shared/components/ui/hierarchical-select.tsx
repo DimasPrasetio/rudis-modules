@@ -116,7 +116,7 @@ export function HierarchicalSelect({
                   onClick={() => choose(o)}
                   style={{ "--guide": `${depth * GUIDE}px` } as CSSProperties}
                   className={cn(
-                    "group relative flex min-h-10 w-full items-start justify-between gap-2 rounded-md py-2 pr-3 pl-[calc(0.625rem+var(--guide))] text-left text-sm text-foreground transition-colors enabled:hover:bg-background focus-visible:bg-background focus-visible:outline-none disabled:cursor-default",
+                    "group relative flex min-h-10 w-full items-start justify-between gap-2 rounded-md py-2 pr-3 pl-[calc(0.625rem+var(--guide))] text-left text-sm text-foreground transition-colors enabled:hover:bg-accent focus-visible:bg-accent focus-visible:outline-solid focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-default",
                     active && "bg-primary/10 font-medium text-primary",
                   )}
                 >

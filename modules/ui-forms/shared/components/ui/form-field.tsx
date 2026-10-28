@@ -12,7 +12,8 @@ export interface FormFieldProps {
   error?: string;
   /** For a control that is not the direct child (e.g. a composite). */
   htmlFor?: string;
-  /** Extra beside the label, e.g. a FieldHint. */
+  /** Extra beside the label, e.g. a FieldHint or a "Lupa kata sandi?" link. Drawn next to the label,
+   *  never inside it, so the control's accessible name stays the label alone. */
   labelAside?: ReactNode;
 }
 
@@ -32,18 +33,20 @@ export function FormField({ label, children, required, hint, error, htmlFor, lab
 
   return (
     <div className="min-w-0">
-      <label htmlFor={controlId} className="mb-1.5 flex items-center gap-1 text-sm font-medium text-foreground">
-        {label}
-        {required && (
-          <>
-            <span aria-hidden className="text-destructive">
-              *
-            </span>
-            <span className="sr-only">(wajib diisi)</span>
-          </>
-        )}
+      <div className="mb-1.5 flex items-center gap-1">
+        <label htmlFor={controlId} className="flex items-center gap-1 text-sm font-medium text-foreground">
+          {label}
+          {required && (
+            <>
+              <span aria-hidden className="text-destructive">
+                *
+              </span>
+              <span className="sr-only">(wajib diisi)</span>
+            </>
+          )}
+        </label>
         {labelAside}
-      </label>
+      </div>
       {control}
       {error ? (
         <p id={messageId} role="alert" className="mt-1.5 text-xs font-medium text-destructive">

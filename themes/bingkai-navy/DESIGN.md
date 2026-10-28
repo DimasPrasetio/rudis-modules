@@ -57,9 +57,16 @@ Scale (base 14px): `text-2xs` 11 · `xs` 12 · `sm` 13 (tables, labels) · `base
 - 4px grid. Page gutter 24 desktop / 16 mobile. Section gap 24. Max content width 1440px; single
   forms max 960px.
 - Density via `<html data-density>`: compact / default / comfortable → row height 32 / 36 / 44.
-- Focus: 2px ring in `--ring` with offset, on every control.
+- Focus: a solid 2px outline in `--ring` with a 2px offset, on every control (inside the
+  element, offset −2px, for rows and options in a scrolling list); `--sidebar-ring` on the navy
+  frame. Measured: `--ring` 4.86:1 on card, 4.65:1 on background, `--sidebar-ring` 6.77:1 on
+  `--sidebar` — WCAG 2.2 · 1.4.11 asks 3:1. Never a half-transparent ring: `--ring` at 50% over
+  white is about 1.7:1. Text fields turn their border `--ring` instead. A list option or a row in
+  keyboard focus also takes `--accent` behind it.
 - Motion: hover 120ms; popovers 160ms fade; sheets 220ms ease-out; no page enter animations;
-  `prefers-reduced-motion` → none.
+  `prefers-reduced-motion` → none (animations run once, never loop).
+- Every page names the tab ("Pelanggan · <app>", ui-core PageHeader) and starts with a skip link
+  to the content (app-shell), WCAG 2.4.2 and 2.4.1.
 
 ## Page templates
 
@@ -76,3 +83,11 @@ Scale (base 14px): `text-2xs` 11 · `xs` 12 · `sm` 13 (tables, labels) · `base
 
 Glassmorphism and decorative blur; decorative gradients; bento grids as decoration; unusual
 chart types (line, bar, donut are enough); floating chat bubbles.
+
+## Changes
+
+- **0.1.2** — keyboard focus at 3:1 on every control (WCAG 2.2 · 1.4.11): the kernel Button's
+  half-transparent ring (about 1.7:1) gives way to a solid 2px `--ring` outline, light
+  `--sidebar-ring` on the navy frame; a bare `<select>` keeps its outline. Reduced motion runs an
+  animation once instead of looping it at 0.01ms. Focused fields stay clear of a sticky footer
+  (`scroll-padding-bottom`, 2.4.11).
