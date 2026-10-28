@@ -30,8 +30,9 @@ type Repository interface {
 	// Get decodes the named setting into dst; false when it was never saved.
 	Get(ctx context.Context, name string, dst any) (bool, error)
 	// Update reads the named setting under a row lock, lets change modify it, and saves the
-	// result — so two people saving at once never lose each other's change.
-	Update(ctx context.Context, name string, by int64, dst any, change func() error) error
+	// result — so two people saving at once never lose each other's change. change gets the
+	// transaction's context: what it records (the audit) commits with the save.
+	Update(ctx context.Context, name string, by int64, dst any, change func(ctx context.Context) error) error
 }
 
 // Auditor records changes — the kernel's d.Audit.
@@ -68,7 +69,9 @@ func (s *Service) Company(ctx context.Context) (domain.Company, error) {
 	return c.Normalize(), nil
 }
 
-// UpdateCompany saves the profile (not the logo, which has its own calls).
+// UpdateCompany saves the profile — not the logo, which has its own calls, nor the time zone,
+// which is no longer set here (deprecated): both keep their stored value whatever the input says.
+// The audit record of what changed commits with the save.
 func (s *Service) UpdateCompany(ctx context.Context, actor int64, in domain.Company) (domain.Company, error) {
 	in = in.Normalize()
 	var v validator.Validator
@@ -77,18 +80,17 @@ func (s *Service) UpdateCompany(ctx context.Context, actor int64, in domain.Comp
 		return domain.Company{}, err
 	}
 	var current domain.Company
-	var before domain.Company
-	err := s.repo.Update(ctx, companyKey, actor, &current, func() error {
-		before = current.Normalize()
-		in.LogoFileID = current.LogoFileID
+	err := s.repo.Update(ctx, companyKey, actor, &current, func(ctx context.Context) error {
+		before := current.Normalize()
+		in.LogoFileID, in.Timezone = before.LogoFileID, before.Timezone
 		current = in
+		if changes := diff(before, in); len(changes) > 0 {
+			s.audit.Record(ctx, kernel.AuditEntry{Module: "settings", Action: "settings.company_updated", Target: "settings:company", Summary: "Mengubah profil perusahaan", Data: changes})
+		}
 		return nil
 	})
 	if err != nil {
 		return domain.Company{}, err
-	}
-	if changes := diff(before, in); len(changes) > 0 {
-		s.audit.Record(ctx, kernel.AuditEntry{Module: "settings", Action: "settings.company_updated", Target: "settings:company", Summary: "Mengubah profil perusahaan", Data: changes})
 	}
 	return in, nil
 }
@@ -107,8 +109,9 @@ func (s *Service) SetLogo(ctx context.Context, actor int64, filename string, r i
 	}
 	var c domain.Company
 	var old int64
-	if err := s.repo.Update(ctx, companyKey, actor, &c, func() error {
+	if err := s.repo.Update(ctx, companyKey, actor, &c, func(ctx context.Context) error {
 		old, c.LogoFileID = c.LogoFileID, id
+		s.audit.Record(ctx, kernel.AuditEntry{Module: "settings", Action: "settings.logo_updated", Target: "settings:company", Summary: "Mengganti logo perusahaan", Data: map[string]any{"file_id": id}})
 		return nil
 	}); err != nil {
 		_ = s.files.Delete(ctx, id)
@@ -117,7 +120,6 @@ func (s *Service) SetLogo(ctx context.Context, actor int64, filename string, r i
 	if old != 0 {
 		_ = s.files.Delete(ctx, old)
 	}
-	s.audit.Record(ctx, kernel.AuditEntry{Module: "settings", Action: "settings.logo_updated", Target: "settings:company", Summary: "Mengganti logo perusahaan", Data: map[string]any{"file_id": id}})
 	return c.Normalize(), nil
 }
 
@@ -128,15 +130,17 @@ func (s *Service) RemoveLogo(ctx context.Context, actor int64) (domain.Company, 
 	}
 	var c domain.Company
 	var old int64
-	if err := s.repo.Update(ctx, companyKey, actor, &c, func() error {
+	if err := s.repo.Update(ctx, companyKey, actor, &c, func(ctx context.Context) error {
 		old, c.LogoFileID = c.LogoFileID, 0
+		if old != 0 {
+			s.audit.Record(ctx, kernel.AuditEntry{Module: "settings", Action: "settings.logo_removed", Target: "settings:company", Summary: "Menghapus logo perusahaan"})
+		}
 		return nil
 	}); err != nil {
 		return domain.Company{}, err
 	}
 	if old != 0 {
 		_ = s.files.Delete(ctx, old)
-		s.audit.Record(ctx, kernel.AuditEntry{Module: "settings", Action: "settings.logo_removed", Target: "settings:company", Summary: "Menghapus logo perusahaan"})
 	}
 	return c.Normalize(), nil
 }

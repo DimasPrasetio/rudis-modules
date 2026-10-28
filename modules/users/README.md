@@ -5,12 +5,20 @@ The people who can sign in. Fullstack (Go + React), owns the `users` table.
 **API** — reading needs `users.read`, changing needs `users.manage` (declared with
 `d.Authz.Declare`; without an authorization module any signed-in user passes):
 `GET /api/v1/users?page=&limit=&q=` (paginated, searches name/email) · `GET /api/v1/users/{id}` ·
-`POST /api/v1/users` · `PUT /api/v1/users/{id}` (fields left out of the body keep their value).
+`POST /api/v1/users` · `PUT /api/v1/users/{id}` (name and email are always sent; an empty
+`password` keeps the current one and a missing `is_active` keeps the current state). A search
+matches `%` and `_` literally.
 Emails are stored lower-cased and unique; passwords are bcrypt hashes (8–72 characters).
 
 **Protections.** People are **deactivated, never deleted** — orders, roles, and logs elsewhere
 keep pointing at them, and deactivation ends their sessions at once. Nobody can deactivate their
-own account (409). Changing *someone else's* account — name, email, password, active state — is
+own account (409), nor change their own email or password from the users page (403): the
+password goes through the auth provider, which checks the current one first, and the email is
+changed by another administrator — an unattended open session is not enough to take an account
+over (OWASP ASVS 5.0 V7.5.1, re-authentication before sensitive changes). The page shows those
+fields read-only on one's own row. An update reads the row under its lock and writes it, the new
+password, and the audit record in one transaction, so two administrators acting at once cannot
+undo each other (a rename bringing back an account just deactivated). Changing *someone else's* account — name, email, password, active state — is
 allowed only when it holds no permission the actor lacks (`d.Authz.Covers`, kernel 4): an
 operator with `users.manage` cannot reset an administrator's password or lock them out. A
 password change records `password_changed_at`, and the auth provider ends every session opened
@@ -53,6 +61,12 @@ from the user menu through the `user-menu:items` slot; nav entry "Pengguna" in "
 provider), changing one's own email.
 
 ## Changes
+
+- **0.8.0** — `PUT /users/{id}` on one's own account refuses a new email or password (403; the
+  page shows them read-only there) — use the auth provider's change-password. Updates are one
+  locked transaction with their audit record (no lost update between two administrators); search
+  escapes `%` and `_`. The `Repository` interface gains `GetForUpdate` (a project's own
+  repository implements it).
 
 - **0.7.0** — `UserClient.IDs` and `SearchAmong`; optional late port `Placements` (per-company users pages, new
   users placed where they were created); creating a user runs inside `d.Tx`.

@@ -21,15 +21,21 @@ then whatever other modules contribute through the **`settings:sections`** slot 
 `<SectionCard>` each) — one place for settings without modules importing each other.
 
 **Audit:** `settings.company_updated` (only the fields that changed), `settings.logo_updated`,
-`settings.logo_removed`.
+`settings.logo_removed` — each recorded inside the save's transaction, so a save and its record
+commit together or not at all.
 
 **Time zone** — no longer set here: where a day starts follows `kernel.Today`, the scope's zone
 (a branch's or company's, from the `organization` module), else `APP_TIMEZONE`. The contract's
-`Timezone` keeps the stored value and is deprecated.
+`Timezone` keeps the stored value and is deprecated: saving the profile never changes it,
+whatever the request carries.
 
 **Not in this version:** per-user preferences.
 
 ## Changes
+
+- **0.3.1** — Saving the company profile no longer resets a stored time zone to Asia/Jakarta
+  (the form stopped sending it; the service keeps the stored value). Audit records commit in the
+  same transaction as the save.
 
 - **0.3.0** — Ready for several companies (`organization`): the public logo names its company
   (`?company=<id>`, default 1) instead of reading a scope a public request does not have; the

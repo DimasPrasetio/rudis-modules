@@ -173,10 +173,13 @@ function client(port) {
       const text = await res.text();
       let json;
       try { json = JSON.parse(text); } catch { json = text; }
-      return { status: res.status, body: json, setCookie: set };
+      return { status: res.status, body: json, setCookie: set, headers: res.headers };
     },
   };
 }
+
+/** Waits ms milliseconds without blocking the API processes the checks talk to. */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function expect(label, cond, detail) {
   if (cond) pass(label);
@@ -365,6 +368,22 @@ async function full() {
       const asBearer = (path) => fetch(`http://localhost:${port}${path}`, { headers: { Authorization: `Bearer ${token}` } });
       expect("me (Bearer, token asked for with return_token) → 200", Boolean(token) && (await asBearer("/api/v1/auth/me")).status === 200, api1.body);
 
+      // auth 0.8: sign-in limits slow guessing down; good sign-ins never use up an address.
+      let goodSignIns = 0;
+      for (let i = 0; i < 30; i++) {
+        if ((await client(port).call("POST", "/api/v1/auth/login", { email: "admin@example.com", password: "admin-pass-123" })).status === 200) goodSignIns++;
+      }
+      expect("auth: 30 good sign-ins from one address (an office behind NAT) all succeed", goodSignIns === 30, goodSignIns);
+      const guess = client(port);
+      for (let i = 0; i < 5; i++) await guess.call("POST", "/api/v1/auth/login", { email: "ghost@example.com", password: "wrong-wrong" });
+      const slowed = await guess.call("POST", "/api/v1/auth/login", { email: "ghost@example.com", password: "wrong-wrong" });
+      const retryAfter = Number(slowed.headers.get("retry-after"));
+      expect("auth: after 5 failures the next attempt waits → 429 with Retry-After and when, in words",
+        slowed.status === 429 && retryAfter >= 1 && retryAfter <= 300 && /Coba lagi dalam/.test(slowed.body.message ?? ""), { status: slowed.status, retryAfter, body: slowed.body });
+      await sleep(retryAfter * 1000 + 200);
+      expect("auth: after Retry-After the account can be tried again (401, not 429)",
+        (await guess.call("POST", "/api/v1/auth/login", { email: "ghost@example.com", password: "wrong-wrong" })).status === 401);
+
       // Kernel 4: forged cross-site writes are refused whatever the domain layout.
       const raw = (headers, body = '{"name":"X","email":"x1@example.com","password":"x-pass-1234"}') =>
         fetch(`http://localhost:${port}/api/v1/users`, { method: "POST", headers: { Cookie: admin.cookie, ...headers }, body });
@@ -381,6 +400,12 @@ async function full() {
       expect("search → 1 result with meta", list.status === 200 && list.body.meta?.total === 1, list.body);
       const adminId = me.body.data.id;
       expect("deactivate self → 409", (await admin.call("PUT", `/api/v1/users/${adminId}`, { name: "Admin", email: "admin@example.com", is_active: false })).status === 409);
+      expect("users 0.8: own password from the users page → 403 (change-password checks the current one)",
+        (await admin.call("PUT", `/api/v1/users/${adminId}`, { name: "Admin", email: "admin@example.com", password: "taken-over-1" })).status === 403);
+      expect("users 0.8: own email from the users page → 403",
+        (await admin.call("PUT", `/api/v1/users/${adminId}`, { name: "Admin", email: "mine@example.com" })).status === 403);
+      expect("users 0.8: renaming oneself there still works",
+        (await admin.call("PUT", `/api/v1/users/${adminId}`, { name: "Admin", email: "admin@example.com" })).status === 200);
       expect("users are never deleted: DELETE /users/{id} is not a route", [404, 405].includes((await admin.call("DELETE", `/api/v1/users/${adminId}`)).status));
 
       const ana = client(port);
@@ -394,6 +419,14 @@ async function full() {
       expect("she signs in with the new password", (await ana.call("POST", "/api/v1/auth/login", { email: "ana@example.com", password: "ana-pass-456" })).status === 200);
       expect("admin deactivates her", (await admin.call("PUT", `/api/v1/users/${anaId}`, { name: "Ana B", email: "ana@example.com", is_active: false })).status === 200);
       expect("her open session ends on the next request → 401", (await ana.call("GET", "/api/v1/auth/me")).status === 401);
+      const dedi = await admin.call("POST", "/api/v1/users", { name: "Dedi", email: "dedi@example.com", password: "dedi-pass-123" });
+      const dediId = dedi.body.data.id;
+      await Promise.all([
+        admin.call("PUT", `/api/v1/users/${dediId}`, { name: "Dedi", email: "dedi@example.com", is_active: false }),
+        ...[1, 2, 3, 4].map((n) => admin.call("PUT", `/api/v1/users/${dediId}`, { name: `Dedi ${n}`, email: "dedi@example.com" })),
+      ]);
+      expect("users 0.8: renames racing a deactivation never bring the account back (one locked update each)",
+        (await admin.call("GET", `/api/v1/users/${dediId}`)).body.data?.is_active === false);
 
       // rbac: the bootstrap admin holds Administrator (*); a user without roles holds nothing.
       const perms = await admin.call("GET", "/api/v1/rbac/permissions");
@@ -444,6 +477,10 @@ async function full() {
       expect("settings: a malformed NPWP → 422 on tax_id", (await admin.call("PUT", "/api/v1/settings/company", { name: "Toko Maju", tax_id: "123" })).body.errors?.[0]?.field === "tax_id");
       const savedCo = await admin.call("PUT", "/api/v1/settings/company", { name: "Toko Maju", legal_name: "PT Toko Maju", tax_id: "01.234.567.8-901.000", email: "info@tokomaju.test", timezone: "Asia/Jakarta" });
       expect("settings: the profile saves", savedCo.status === 200 && savedCo.body.data?.name === "Toko Maju", savedCo.body);
+      mysql(db, "UPDATE settings SET value = JSON_SET(value, '$.timezone', 'Asia/Makassar') WHERE name = 'company';", name);
+      const keptTz = await admin.call("PUT", "/api/v1/settings/company", { name: "Toko Maju", legal_name: "PT Toko Maju", tax_id: "01.234.567.8-901.000", email: "info@tokomaju.test" });
+      expect("settings 0.3.1: saving the profile keeps a stored time zone (no reset to Asia/Jakarta)",
+        keptTz.status === 200 && keptTz.body.data?.timezone === "Asia/Makassar", keptTz.body);
       const uploadLogo = (filename, bytes, type) => {
         const form = new FormData();
         form.append("file", new Blob([bytes], { type }), filename);
@@ -625,10 +662,25 @@ async function authAlone() {
       return;
     }
     db = parseDsn(DB_DSN);
-    api = await startApi(dir, 18092, { DB_DSN: freshDatabase(dir, db, name) });
+    // A short idle timeout, to see it end an unused session and spare one in use (auth 0.8).
+    api = await startApi(dir, 18092, { DB_DSN: freshDatabase(dir, db, name), SESSION_IDLE_TIMEOUT: "3s" });
     const c = client(18092);
     const ok = await c.call("POST", "/api/v1/auth/login", { email: "fixture@example.com", password: "fixture-pass-123" });
     expect("sign in against the project's own store → 200", ok.status === 200, ok.body);
+    await sleep(2000);
+    const used1 = (await c.call("GET", "/api/v1/auth/me")).status;
+    await sleep(2000);
+    const used2 = (await c.call("GET", "/api/v1/auth/me")).status;
+    expect("idle timeout 3s: a session used every 2s outlives it (each use moves the deadline)", used1 === 200 && used2 === 200, [used1, used2]);
+    await sleep(4000);
+    expect("idle timeout 3s: unused for 4s it ends → 401", (await c.call("GET", "/api/v1/auth/me")).status === 401);
+    const first = client(18092);
+    await first.call("POST", "/api/v1/auth/login", { email: "fixture@example.com", password: "fixture-pass-123" });
+    const oldCookie = first.cookie;
+    await first.call("POST", "/api/v1/auth/login", { email: "fixture@example.com", password: "fixture-pass-123" });
+    const stale = await fetch("http://localhost:18092/api/v1/auth/me", { headers: { Cookie: oldCookie } });
+    expect("signing in again in a browser ends the session it held", stale.status === 401 && first.cookie !== oldCookie, stale.status);
+    await c.call("POST", "/api/v1/auth/login", { email: "fixture@example.com", password: "fixture-pass-123" });
     const me = await c.call("GET", "/api/v1/auth/me");
     expect("me → the project's user", me.status === 200 && me.body.data?.id === 7, me.body);
     expect("no users module → /api/v1/users is 404", (await c.call("GET", "/api/v1/users")).status === 404);

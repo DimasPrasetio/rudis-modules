@@ -20,7 +20,7 @@ or the testbed's scenarios without touching it.
 |---|---|---|---|---|---|
 | [app-shell](modules/app-shell/README.md) | web | 0.6.0 | 6 | — | full, organization, documents |
 | [audit-log](modules/audit-log/README.md) | fullstack | 0.2.0 | 6 | yes | full, organization, documents |
-| [auth](modules/auth/README.md) | fullstack | 0.7.0 | 6 | — | full, no-rbac, auth-alone, lifecycle, organization, documents |
+| [auth](modules/auth/README.md) | fullstack | 0.8.0 | 6 | — | full, no-rbac, auth-alone, lifecycle, organization, documents |
 | [customers](modules/customers/README.md) | fullstack | 0.1.0 | 6 | yes | documents |
 | [docstate](modules/docstate/README.md) | gokit | 0.1.0 | 6 | — | documents |
 | [files](modules/files/README.md) | fullstack | 0.2.0 | 6 | yes | full, organization |
@@ -30,7 +30,7 @@ or the testbed's scenarios without touching it.
 | [organization](modules/organization/README.md) | fullstack | 0.1.0 | 6 | — | organization, documents |
 | [period](modules/period/README.md) | fullstack | 0.1.0 | 6 | yes | documents |
 | [rbac](modules/rbac/README.md) | fullstack | 0.6.0 | 6 | — | full, organization, documents |
-| [settings](modules/settings/README.md) | fullstack | 0.3.0 | 6 | yes | full, organization |
+| [settings](modules/settings/README.md) | fullstack | 0.3.1 | 6 | yes | full, organization |
 | [suppliers](modules/suppliers/README.md) | fullstack | 0.1.0 | 6 | yes | documents |
 | [taxid](modules/taxid/README.md) | gokit | 0.1.0 | 6 | — | documents |
 | [ui-core](modules/ui-core/README.md) | ui | 0.5.0 | 6 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
@@ -38,7 +38,7 @@ or the testbed's scenarios without touching it.
 | [ui-feedback](modules/ui-feedback/README.md) | ui | 0.1.0 | 3 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
 | [ui-forms](modules/ui-forms/README.md) | ui | 0.3.0 | 3 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
 | [ui-gallery](modules/ui-gallery/README.md) | web | 0.1.2 | 3 | — | full, lifecycle |
-| [users](modules/users/README.md) | fullstack | 0.7.0 | 6 | — | full, no-rbac, users-alone, lifecycle, organization, documents |
+| [users](modules/users/README.md) | fullstack | 0.8.0 | 6 | — | full, no-rbac, users-alone, lifecycle, organization, documents |
 
 | Preset | Version |
 |---|---|

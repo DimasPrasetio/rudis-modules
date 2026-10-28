@@ -23,7 +23,8 @@ type Module struct {
 }
 
 // New builds the module. JWT_SECRET is required (at least 32 characters in production);
-// JWT_EXPIRES_IN defaults to 24h. passwords and mailer are optional (nil): without passwords
+// JWT_EXPIRES_IN defaults to 24h; SESSION_IDLE_TIMEOUT (default 60m, "0" turns it off) ends a
+// session nobody has used for that long. passwords and mailer are optional (nil): without passwords
 // there is no "change password" or "forgot password"; without mailer, no "forgot password".
 // With both, APP_URL — the address people open the app at — is required in production: reset
 // links are built from it, never from a request's Host header.
@@ -38,6 +39,10 @@ func New(d *kernel.Deps, users ports.UserStore, passwords ports.PasswordWriter, 
 	ttl, err := time.ParseDuration(config.Get("JWT_EXPIRES_IN", "24h"))
 	if err != nil || ttl <= 0 {
 		return nil, fmt.Errorf("auth: JWT_EXPIRES_IN must be a duration such as 24h (got %q)", config.Get("JWT_EXPIRES_IN", ""))
+	}
+	idle, err := idleTimeout(config.Get("SESSION_IDLE_TIMEOUT", "60m"))
+	if err != nil {
+		return nil, err
 	}
 	appURL := config.Get("APP_URL", "")
 	if passwords != nil && mailer != nil {
@@ -56,10 +61,22 @@ func New(d *kernel.Deps, users ports.UserStore, passwords ports.PasswordWriter, 
 		Sessions: infrastructure.NewSessions(d.Tx), Resets: infrastructure.NewResets(d.Tx),
 		Tokens:  application.NewTokens(secret, ttl, d.Config.Name),
 		Limiter: application.NewLimiter(15*time.Minute, 50_000),
-		Audit:   d.Audit, Log: d.Log, AppURL: appURL, AppName: d.Config.Name,
+		Audit:   d.Audit, Log: d.Log, AppURL: appURL, AppName: d.Config.Name, IdleTimeout: idle,
 	})
 	d.Jobs.Every("auth.cleanup", time.Hour, svc.Cleanup)
 	return &Module{handler: presentation.NewHandler(svc, d.Config.IsProduction(), d.Auth.Require)}, nil
+}
+
+// idleTimeout reads SESSION_IDLE_TIMEOUT: a positive Go duration, or "0" for none.
+func idleTimeout(s string) (time.Duration, error) {
+	if s == "0" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("auth: SESSION_IDLE_TIMEOUT must be a duration such as 60m, or 0 to turn it off (got %q)", s)
+	}
+	return d, nil
 }
 
 // Routes mounts /api/v1/auth.

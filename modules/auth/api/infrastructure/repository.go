@@ -31,7 +31,8 @@ func (r *Sessions) q(ctx context.Context) *sqlc.Queries { return sqlc.New(r.tx.C
 
 func (s *Sessions) Create(ctx context.Context, r application.SessionRecord) error {
 	return s.q(ctx).CreateSession(ctx, sqlc.CreateSessionParams{
-		ID: r.ID, UserID: r.UserID, CreatedAt: r.CreatedAt, ExpiresAt: r.ExpiresAt, Ip: r.IP, UserAgent: r.UserAgent,
+		ID: r.ID, UserID: r.UserID, CreatedAt: r.CreatedAt, LastSeenAt: sql.NullTime{Time: r.LastSeenAt, Valid: !r.LastSeenAt.IsZero()},
+		ExpiresAt: r.ExpiresAt, Ip: r.IP, UserAgent: r.UserAgent,
 	})
 }
 
@@ -43,7 +44,11 @@ func (s *Sessions) Get(ctx context.Context, id string) (application.SessionRecor
 	if err != nil {
 		return application.SessionRecord{}, err
 	}
-	return application.SessionRecord{ID: row.ID, UserID: row.UserID, CreatedAt: row.CreatedAt, ExpiresAt: row.ExpiresAt, Revoked: row.RevokedAt.Valid}, nil
+	return application.SessionRecord{ID: row.ID, UserID: row.UserID, CreatedAt: row.CreatedAt, LastSeenAt: row.LastSeenAt.Time, ExpiresAt: row.ExpiresAt, Revoked: row.RevokedAt.Valid}, nil
+}
+
+func (s *Sessions) Touch(ctx context.Context, id string, at time.Time) error {
+	return s.q(ctx).TouchSession(ctx, sqlc.TouchSessionParams{LastSeenAt: sql.NullTime{Time: at, Valid: true}, ID: id})
 }
 
 func (s *Sessions) Revoke(ctx context.Context, id string, at time.Time) error {

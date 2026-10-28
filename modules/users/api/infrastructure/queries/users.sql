@@ -43,6 +43,12 @@ SELECT id, name, email, is_active, created_at, updated_at, password_changed_at
 FROM users
 WHERE id = ?;
 
+-- name: GetUserForUpdate :one
+SELECT id, name, email, is_active, created_at, updated_at, password_changed_at
+FROM users
+WHERE id = ?
+FOR UPDATE;
+
 -- name: GetUserByEmail :one
 SELECT id, name, email, is_active, created_at, updated_at
 FROM users

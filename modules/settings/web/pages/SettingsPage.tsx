@@ -18,7 +18,7 @@ import { LogoCard } from "@/modules/settings/components/LogoCard";
 import { fetchCompany, saveCompany } from "@/modules/settings/services/settings.service";
 import type { Company, CompanyValues } from "@/modules/settings/types/settings";
 
-const EMPTY: CompanyValues = { name: "", legal_name: "", address: "", phone: "", email: "", tax_id: "", timezone: "Asia/Jakarta" };
+const EMPTY: CompanyValues = { name: "", legal_name: "", address: "", phone: "", email: "", tax_id: "" };
 
 /**
  * App-wide settings: the company profile and logo, then whatever other modules add through the
@@ -35,8 +35,8 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!company.data) return;
     setCurrent(company.data);
-    // The time zone is no longer edited here, but goes back as it was (see contracts.Company).
-    const { company_id: _c, has_logo: _l, logo_upload: _u, ...rest } = company.data;
+    // The time zone is no longer edited here, and the API keeps the stored one (see contracts.Company).
+    const { company_id: _c, has_logo: _l, logo_upload: _u, timezone: _t, ...rest } = company.data;
     setValues(rest);
   }, [company.data]);
 

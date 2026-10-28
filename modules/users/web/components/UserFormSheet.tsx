@@ -18,13 +18,15 @@ interface UserFormSheetProps {
   onClose: () => void;
   /** The user to edit; absent to add one. */
   user?: User;
+  /** The user is the one signed in: email, password, and active state are not changed here. */
+  self?: boolean;
   onSaved: (user: User) => void;
 }
 
 type Errors = Partial<Record<"name" | "email" | "password", string>>;
 
 /** Add or edit a user — master data, so a side sheet. */
-export function UserFormSheet({ open, onClose, user, onSaved }: UserFormSheetProps) {
+export function UserFormSheet({ open, onClose, user, self = false, onSaved }: UserFormSheetProps) {
   const editing = Boolean(user);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -93,18 +95,22 @@ export function UserFormSheet({ open, onClose, user, onSaved }: UserFormSheetPro
         <FormField label="Nama" required error={errors.name}>
           <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" />
         </FormField>
-        <FormField label="Email" required error={errors.email}>
-          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
+        <FormField label="Email" required error={errors.email} hint={self ? "Email akun Anda sendiri diubah oleh administrator lain." : undefined}>
+          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" disabled={self} />
         </FormField>
-        <FormField label={editing ? "Kata sandi baru" : "Kata sandi"} required={!editing} error={errors.password} hint="Minimal 8 karakter.">
-          <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
-        </FormField>
+        {self ? (
+          <Notice tone="info" title="Kata sandi Anda sendiri">Ganti lewat menu pengguna › Ubah kata sandi — kata sandi saat ini diperiksa dulu.</Notice>
+        ) : (
+          <FormField label={editing ? "Kata sandi baru" : "Kata sandi"} required={!editing} error={errors.password} hint="Minimal 8 karakter.">
+            <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+          </FormField>
+        )}
         <label className="flex items-center justify-between gap-4 rounded-lg border border-border px-4 py-3">
           <span>
             <span className="block text-sm font-medium">Aktif</span>
-            <span className="block text-xs text-muted-foreground">Pengguna nonaktif tidak bisa masuk.</span>
+            <span className="block text-xs text-muted-foreground">{self ? "Anda tidak dapat menonaktifkan akun sendiri." : "Pengguna nonaktif tidak bisa masuk."}</span>
           </span>
-          <Switch checked={isActive} onCheckedChange={setIsActive} />
+          <Switch checked={isActive} onCheckedChange={setIsActive} disabled={self} aria-label="Aktif" />
         </label>
       </form>
     </FormSheet>

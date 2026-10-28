@@ -42,7 +42,7 @@ func (r *Repository) Get(ctx context.Context, name string, dst any) (bool, error
 
 // Update reads, changes, and writes the setting under a row lock, inside d.Tx (a caller's
 // transaction is joined).
-func (r *Repository) Update(ctx context.Context, name string, by int64, dst any, change func() error) error {
+func (r *Repository) Update(ctx context.Context, name string, by int64, dst any, change func(ctx context.Context) error) error {
 	// The row exists before it is locked: locking a missing row takes a gap lock, and two first
 	// saves holding one each deadlock on the insert.
 	if err := r.q(ctx).EnsureSetting(ctx, sqlc.EnsureSettingParams{CompanyID: company(ctx), Name: name, UpdatedAt: time.Now().UTC()}); err != nil {
@@ -60,7 +60,7 @@ func (r *Repository) Update(ctx context.Context, name string, by int64, dst any,
 				return err
 			}
 		}
-		if err := change(); err != nil {
+		if err := change(ctx); err != nil {
 			return err
 		}
 		value, err := json.Marshal(dst)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -29,7 +30,12 @@ func NewRepository(tx *kernel.TxSlot) *Repository {
 // q runs on the transaction in ctx when there is one (d.Tx), else on the pool.
 func (r *Repository) q(ctx context.Context) *sqlc.Queries { return sqlc.New(r.tx.Conn(ctx)) }
 
+// likeLiteral makes a search match itself: % and _ are LIKE wildcards, and MySQL's default
+// escape character is the backslash.
+var likeLiteral = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
 func (r *Repository) List(ctx context.Context, search string, p pagination.Params) ([]domain.User, int64, error) {
+	search = likeLiteral.Replace(search)
 	rows, err := r.q(ctx).ListUsers(ctx, sqlc.ListUsersParams{Search: search, Limit: int32(p.Limit), Offset: int32(p.Offset())})
 	if err != nil {
 		return nil, 0, err
@@ -46,6 +52,7 @@ func (r *Repository) List(ctx context.Context, search string, p pagination.Param
 }
 
 func (r *Repository) ListIn(ctx context.Context, ids []int64, search string, p pagination.Params) ([]domain.User, int64, error) {
+	search = likeLiteral.Replace(search)
 	rows, err := r.q(ctx).ListUsersIn(ctx, sqlc.ListUsersInParams{Ids: ids, Search: search, Limit: int32(p.Limit), Offset: int32(p.Offset())})
 	if err != nil {
 		return nil, 0, err
@@ -69,6 +76,17 @@ func (r *Repository) CountAll(ctx context.Context) (int64, error) {
 
 func (r *Repository) Get(ctx context.Context, id int64) (domain.User, error) {
 	row, err := r.q(ctx).GetUser(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.User{}, application.ErrNotFound
+	}
+	if err != nil {
+		return domain.User{}, err
+	}
+	return domain.User{ID: row.ID, Name: row.Name, Email: row.Email, IsActive: row.IsActive, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, PasswordChangedAt: row.PasswordChangedAt.Time}, nil
+}
+
+func (r *Repository) GetForUpdate(ctx context.Context, id int64) (domain.User, error) {
+	row, err := r.q(ctx).GetUserForUpdate(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.User{}, application.ErrNotFound
 	}

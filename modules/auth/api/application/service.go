@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -25,8 +26,30 @@ var errInvalid = apperror.Unauthorized("Email atau kata sandi salah")
 // errSession is the one answer to every unusable session.
 var errSession = apperror.Unauthorized("Sesi berakhir atau tidak valid")
 
-// errTooMany answers a sign-in the limiter refused.
-var errTooMany = apperror.New(http.StatusTooManyRequests, "Terlalu banyak percobaan masuk yang gagal. Coba lagi nanti.")
+// TooManyError is an attempt the limiter refused, with how long until the next one is allowed —
+// the handler sends it as Retry-After.
+type TooManyError struct {
+	RetryAfter time.Duration
+	err        *apperror.Error
+}
+
+func (e *TooManyError) Error() string { return e.err.Error() }
+func (e *TooManyError) Unwrap() error { return e.err }
+
+// tooMany answers an attempt refused for wait, in whole seconds and in words: "Terlalu banyak
+// percobaan masuk yang gagal. Coba lagi dalam 30 detik."
+func tooMany(what string, wait time.Duration) error {
+	secs := int(math.Ceil(wait.Seconds()))
+	if secs < 1 {
+		secs = 1
+	}
+	when := fmt.Sprintf("%d detik", secs)
+	if secs >= 60 {
+		when = fmt.Sprintf("%d menit", (secs+59)/60)
+	}
+	return &TooManyError{RetryAfter: time.Duration(secs) * time.Second,
+		err: apperror.New(http.StatusTooManyRequests, fmt.Sprintf("Terlalu banyak percobaan %s. Coba lagi dalam %s.", what, when))}
+}
 
 // dummyHash is compared against when the email is unknown, so an unknown email takes as long
 // as a wrong password and response time does not reveal which accounts exist.
@@ -35,13 +58,31 @@ var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("not-a-real-password"), bc
 // ErrNoSession means no session row has that ID.
 var ErrNoSession = errors.New("session not found")
 
-// Sign-in limits per window: one person from one address, one address over any accounts
-// (password spraying), and one account from anywhere (a slow distributed guess).
+// Sign-in limits per window (15 minutes) — counted attempts, free ones before each next attempt
+// waits (1s, doubling), the longest wait, and the most the window holds:
+//   - one person from one address: 5 free, waits up to 5 minutes, 30 at most;
+//   - one account from anywhere (a slow distributed guess): 10 free, waits up to 30 seconds —
+//     short, so someone guessing a victim's password cannot lock the victim out for long — and
+//     100 at most (NIST SP 800-63B-4 §3.2.2: no more than 100 consecutive failures);
+//   - one address over any accounts (password spraying): 20 free, up to 1 minute, 200 at most —
+//     a successful sign-in is taken back, so an office behind one NAT is never slowed by its
+//     own people signing in;
+//   - one IPv6 /48 over its /64s: 100 free, up to 1 minute, 1000 at most.
 const (
-	maxPerEmailAndIP = 5
-	maxPerIP         = 20
-	maxPerEmail      = 30
+	freePerEmailAndIP, maxPerEmailAndIP = 5, 30
+	freePerEmail, maxPerEmail           = 10, 100
+	freePerIP, maxPerIP                 = 20, 200
+	freePerNet, maxPerNet               = 100, 1000
+
+	waitPerEmailAndIP = 5 * time.Minute
+	waitPerEmail      = 30 * time.Second
+	waitPerIP         = time.Minute
 )
+
+// touchEvery is how often a used session's last_seen_at is written: at most once a minute, so
+// the idle timeout costs one write per minute per active session, not one per request — and at
+// least twice per idle timeout, so a session in use never runs out between two writes.
+func (s *Service) touchEvery() time.Duration { return min(time.Minute, s.idle/2) }
 
 // SessionRecord is one sign-in, stored so it can be ended before its token expires.
 type SessionRecord struct {
@@ -49,9 +90,12 @@ type SessionRecord struct {
 	UserID    int64
 	CreatedAt time.Time
 	ExpiresAt time.Time
-	Revoked   bool
-	IP        string
-	UserAgent string
+	// LastSeenAt is when the session was last used (zero for a session from before the idle
+	// timeout: its CreatedAt counts).
+	LastSeenAt time.Time
+	Revoked    bool
+	IP         string
+	UserAgent  string
 }
 
 // Sessions stores sign-ins.
@@ -60,6 +104,8 @@ type Sessions interface {
 	// Get returns the session, or ErrNoSession.
 	Get(ctx context.Context, id string) (SessionRecord, error)
 	Revoke(ctx context.Context, id string, at time.Time) error
+	// Touch records that the session was used at at.
+	Touch(ctx context.Context, id string, at time.Time) error
 	DeleteExpired(ctx context.Context, before time.Time) error
 }
 
@@ -70,10 +116,12 @@ type Session struct {
 	User      ports.User
 }
 
-// Client is where a sign-in comes from, recorded with the session.
+// Client is where a sign-in comes from, recorded with the session. PreviousToken is the session
+// the browser still holds when it signs in again: it ends, so a device keeps one session.
 type Client struct {
-	IP        string
-	UserAgent string
+	IP            string
+	UserAgent     string
+	PreviousToken string
 }
 
 // Auditor records sign-ins and password changes — the kernel's d.Audit.
@@ -84,19 +132,21 @@ type Auditor interface {
 // Deps is what the service is built from. Passwords and Mailer are optional ports (nil turns
 // "change password" and "forgot password" off); AppURL is the public origin reset links point
 // at, never taken from a request header. Limiter counts sign-ins; the password flows get their
-// own limiter with the same settings, so flooding one flow never locks out another.
+// own limiter with the same settings, so flooding one flow never locks out another. IdleTimeout
+// ends a session unused for that long (0: only its expiry ends it).
 type Deps struct {
-	Users     ports.UserStore
-	Passwords ports.PasswordWriter
-	Mailer    ports.Mailer
-	Sessions  Sessions
-	Resets    Resets
-	Tokens    *Tokens
-	Limiter   *Limiter
-	Audit     Auditor
-	Log       *slog.Logger
-	AppURL    string
-	AppName   string
+	Users       ports.UserStore
+	Passwords   ports.PasswordWriter
+	Mailer      ports.Mailer
+	Sessions    Sessions
+	Resets      Resets
+	Tokens      *Tokens
+	Limiter     *Limiter
+	Audit       Auditor
+	Log         *slog.Logger
+	AppURL      string
+	AppName     string
+	IdleTimeout time.Duration
 }
 
 // Service signs users in, resolves sessions, and changes passwords.
@@ -113,6 +163,7 @@ type Service struct {
 	log       *slog.Logger
 	appURL    string
 	appName   string
+	idle      time.Duration
 	now       func() time.Time
 	// later runs work the answer must not wait for (the email of "forgot password").
 	later func(func())
@@ -125,7 +176,7 @@ func NewService(d Deps) *Service {
 	}
 	return &Service{users: d.Users, passwords: d.Passwords, mailer: d.Mailer, sessions: d.Sessions, resets: d.Resets, tokens: d.Tokens,
 		limiter: d.Limiter, flows: NewLimiter(d.Limiter.Window, d.Limiter.MaxKeys), audit: d.Audit, log: log,
-		appURL: strings.TrimRight(d.AppURL, "/"), appName: d.AppName, now: time.Now, later: func(f func()) { go f() }}
+		appURL: strings.TrimRight(d.AppURL, "/"), appName: d.AppName, idle: d.IdleTimeout, now: time.Now, later: func(f func()) { go f() }}
 }
 
 func userTarget(id int64) string { return fmt.Sprintf("user:%d", id) }
@@ -153,9 +204,18 @@ func (s *Service) Login(ctx context.Context, email, password string, from Client
 		return Session{}, err
 	}
 	ip := ClientKey(from.IP)
-	personKey, ipKey, emailKey := "ep:"+email+"|"+ip, "ip:"+ip, "e:"+email
-	if !s.limiter.Reserve(Rule{personKey, maxPerEmailAndIP}, Rule{ipKey, maxPerIP}, Rule{emailKey, maxPerEmail}) {
-		return Session{}, errTooMany
+	personKey, ipKey, emailKey, netKey := "ep:"+email+"|"+ip, "ip:"+ip, "e:"+email, ""
+	rules := []Rule{
+		{Key: personKey, Max: maxPerEmailAndIP, Free: freePerEmailAndIP, MaxDelay: waitPerEmailAndIP},
+		{Key: emailKey, Max: maxPerEmail, Free: freePerEmail, MaxDelay: waitPerEmail},
+		{Key: ipKey, Max: maxPerIP, Free: freePerIP, MaxDelay: waitPerIP},
+	}
+	if n := NetKey(from.IP); n != "" {
+		netKey = "net:" + n
+		rules = append(rules, Rule{Key: netKey, Max: maxPerNet, Free: freePerNet, MaxDelay: waitPerIP})
+	}
+	if wait, ok := s.limiter.Reserve(rules...); !ok {
+		return Session{}, tooMany("masuk yang gagal", wait)
 	}
 
 	// The session starts when the password is checked: a password change that lands while this
@@ -176,12 +236,17 @@ func (s *Service) Login(ctx context.Context, email, password string, from Client
 		s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "auth", Action: "auth.sign_in_failed", Target: userTarget(cred.UserID), Summary: "Gagal masuk sebagai " + email})
 		return Session{}, errInvalid
 	}
+	// A deactivated account answers like a wrong password: a distinct answer would confirm the
+	// password to whoever typed it.
 	if !cred.IsActive {
-		return Session{}, apperror.Forbidden("Akun ini dinonaktifkan")
+		s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "auth", Action: "auth.sign_in_failed", Target: userTarget(cred.UserID), Summary: "Gagal masuk sebagai " + email + " (akun dinonaktifkan)"})
+		return Session{}, errInvalid
 	}
-	// The person proved who they are: their own counters start over. The address's counter
-	// stays, so one valid account cannot be used to keep guessing others' passwords.
+	// The person proved who they are: their own counters start over, and this attempt is not
+	// held against the address. The address's failures stay, so one valid account cannot be
+	// used to keep guessing others' passwords.
 	s.limiter.Forget(personKey, emailKey)
+	s.limiter.Undo(ipKey, netKey)
 
 	user, err := s.users.FindUser(ctx, cred.UserID)
 	if err != nil {
@@ -193,6 +258,15 @@ func (s *Service) Login(ctx context.Context, email, password string, from Client
 	session, err := s.open(ctx, user, from, checked)
 	if err != nil {
 		return Session{}, err
+	}
+	// The session this browser still held ends: signing in again (or as someone else) on one
+	// device leaves no older session behind that a copied cookie could keep using.
+	if from.PreviousToken != "" {
+		if _, sid, err := s.tokens.Verify(from.PreviousToken); err == nil {
+			if err := s.sessions.Revoke(ctx, sid, checked); err != nil {
+				s.log.WarnContext(ctx, "auth: the previous session was not ended", "error", err)
+			}
+		}
 	}
 	s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "auth", Action: "auth.signed_in", Actor: user.ID, Target: userTarget(user.ID), Summary: "Masuk"})
 	return session, nil
@@ -214,7 +288,7 @@ func (s *Service) open(ctx context.Context, user ports.User, from Client, now ti
 	if len(ua) > 255 {
 		ua = ua[:255]
 	}
-	if err := s.sessions.Create(ctx, SessionRecord{ID: id, UserID: user.ID, CreatedAt: now, ExpiresAt: exp, IP: from.IP, UserAgent: ua}); err != nil {
+	if err := s.sessions.Create(ctx, SessionRecord{ID: id, UserID: user.ID, CreatedAt: now, ExpiresAt: exp, LastSeenAt: now, IP: from.IP, UserAgent: ua}); err != nil {
 		return Session{}, err
 	}
 	return Session{Token: token, ExpiresAt: exp, User: user}, nil
@@ -230,7 +304,9 @@ func (s *Service) Cleanup(ctx context.Context) error {
 }
 
 // Resolve returns the active user behind a token. A session ends before its token expires
-// when the user signs out, is deactivated or deleted, or their password changes.
+// when the user signs out, is deactivated or deleted, their password changes, or it goes unused
+// for longer than the idle timeout. Using it moves its idle deadline (a write at most once per
+// touchEvery).
 func (s *Service) Resolve(ctx context.Context, token string) (ports.User, error) {
 	uid, sid, err := s.tokens.Verify(token)
 	if err != nil {
@@ -243,7 +319,16 @@ func (s *Service) Resolve(ctx context.Context, token string) (ports.User, error)
 	if err != nil {
 		return ports.User{}, err
 	}
-	if rec.Revoked || rec.UserID != uid || !rec.ExpiresAt.After(s.now()) {
+	now := s.now()
+	if rec.Revoked || rec.UserID != uid || !rec.ExpiresAt.After(now) {
+		return ports.User{}, errSession
+	}
+	seen := rec.LastSeenAt
+	if seen.IsZero() {
+		seen = rec.CreatedAt
+	}
+	if s.idle > 0 && now.Sub(seen) > s.idle {
+		_ = s.sessions.Revoke(ctx, sid, now.UTC())
 		return ports.User{}, errSession
 	}
 	u, err := s.users.FindUser(ctx, uid)
@@ -256,8 +341,13 @@ func (s *Service) Resolve(ctx context.Context, token string) (ports.User, error)
 	// Opened at or before the last password change: ended. (Microsecond timestamps on both
 	// sides, so a change and a sign-in in the same second are still ordered.)
 	if !u.PasswordChangedAt.IsZero() && !rec.CreatedAt.After(u.PasswordChangedAt) {
-		_ = s.sessions.Revoke(ctx, sid, s.now().UTC())
+		_ = s.sessions.Revoke(ctx, sid, now.UTC())
 		return ports.User{}, errSession
+	}
+	if s.idle > 0 && now.Sub(seen) >= s.touchEvery() {
+		if err := s.sessions.Touch(ctx, sid, now.UTC()); err != nil {
+			s.log.WarnContext(ctx, "auth: session use not recorded", "error", err)
+		}
 	}
 	return u, nil
 }

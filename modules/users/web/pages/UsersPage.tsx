@@ -16,7 +16,7 @@ import { useResource } from "@/shared/hooks/use-resource";
 import { formatDate } from "@/shared/lib/format";
 import { notify } from "@/shared/lib/notify";
 import { UserFormSheet } from "@/modules/users/components/UserFormSheet";
-import { listUsers, setUserActive } from "@/modules/users/services/users.service";
+import { fetchProfile, listUsers, setUserActive } from "@/modules/users/services/users.service";
 import type { User } from "@/modules/users/types/user";
 
 export default function UsersPage() {
@@ -35,6 +35,8 @@ export default function UsersPage() {
   const rows = users.data?.data ?? [];
   const meta = users.data?.meta ?? { page, limit, total: 0, total_pages: 0 };
   const { loading, error, reload: load } = users;
+  // Whose account this is: one's own email and password are not changed from here.
+  const me = useResource((signal) => fetchProfile(signal), []);
 
   function openCreate() {
     setEditing(undefined);
@@ -148,7 +150,7 @@ export default function UsersPage() {
         )}
       </section>
 
-      <UserFormSheet open={sheetOpen} onClose={() => setSheetOpen(false)} user={editing} onSaved={load} />
+      <UserFormSheet open={sheetOpen} onClose={() => setSheetOpen(false)} user={editing} self={editing !== undefined && editing.id === me.data?.id} onSaved={load} />
       <ConfirmDialog
         open={toggling !== undefined}
         onOpenChange={(open) => !open && setToggling(undefined)}
