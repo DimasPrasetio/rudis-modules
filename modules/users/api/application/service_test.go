@@ -24,6 +24,7 @@ type memRepo struct {
 	users  map[int64]domain.User
 	hashes map[int64]string
 	nextID int64
+	locked []int64 // rows read with GetForUpdate
 }
 
 func newMemRepo() *memRepo {
@@ -64,6 +65,11 @@ func (m *memRepo) Get(_ context.Context, id int64) (domain.User, error) {
 		return domain.User{}, application.ErrNotFound
 	}
 	return u, nil
+}
+
+func (m *memRepo) GetForUpdate(ctx context.Context, id int64) (domain.User, error) {
+	m.locked = append(m.locked, id)
+	return m.Get(ctx, id)
 }
 
 func (m *memRepo) GetByEmail(_ context.Context, email string) (domain.User, error) {
@@ -218,6 +224,36 @@ func TestCannotDeactivateYourself(t *testing.T) {
 	_, err := svc.Update(context.Background(), u.ID, u.ID, application.UpdateInput{Name: "Ana", Email: u.Email, IsActive: boolPtr(false)})
 	if got := status(t, err); got != http.StatusConflict {
 		t.Errorf("deactivate self: status = %d, want 409", got)
+	}
+}
+
+func TestYourOwnEmailAndPasswordAreNotChangedFromTheUsersPage(t *testing.T) {
+	repo := newMemRepo()
+	svc := newService(repo)
+	u, _ := svc.Create(context.Background(), application.CreateInput{Name: "Ana", Email: "ana@example.com", Password: "secret123", IsActive: true})
+	if _, err := svc.Update(context.Background(), u.ID, u.ID, application.UpdateInput{Name: "Ana", Email: u.Email, Password: "new-secret-1"}); status(t, err) != http.StatusForbidden {
+		t.Fatalf("own password from the admin page: want 403, got %v", err)
+	}
+	if _, err := svc.Update(context.Background(), u.ID, u.ID, application.UpdateInput{Name: "Ana", Email: "mine@example.com"}); status(t, err) != http.StatusForbidden {
+		t.Fatalf("own email from the admin page: want 403, got %v", err)
+	}
+	if repo.hashes[u.ID] != "hash:secret123" || repo.users[u.ID].Email != "ana@example.com" {
+		t.Fatal("a refused change was written")
+	}
+	if got, err := svc.Update(context.Background(), u.ID, u.ID, application.UpdateInput{Name: "Ana B", Email: u.Email}); err != nil || got.Name != "Ana B" {
+		t.Fatalf("renaming yourself stays allowed: %+v %v", got, err)
+	}
+}
+
+func TestUpdateReadsTheRowUnderItsLock(t *testing.T) {
+	repo := newMemRepo()
+	svc := newService(repo)
+	u := create(t, svc, "ana@example.com")
+	if _, err := svc.Update(context.Background(), 99, u.ID, application.UpdateInput{Name: "Ana B", Email: u.Email}); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.locked) != 1 || repo.locked[0] != u.ID {
+		t.Fatalf("the update must read the row it writes under its lock, read: %v", repo.locked)
 	}
 }
 

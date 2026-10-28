@@ -12,4 +12,5 @@ export interface Company {
   logo_upload: boolean;
 }
 
-export type CompanyValues = Omit<Company, "company_id" | "has_logo" | "logo_upload">;
+/** What the form saves. The time zone is not among them: it is no longer set here (deprecated). */
+export type CompanyValues = Omit<Company, "company_id" | "has_logo" | "logo_upload" | "timezone">;

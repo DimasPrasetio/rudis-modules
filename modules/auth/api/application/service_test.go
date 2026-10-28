@@ -2,6 +2,7 @@ package application_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -54,8 +55,9 @@ func (f *fakeStore) FindUser(_ context.Context, id int64) (ports.User, error) {
 
 // fakeSessions keeps sessions in memory.
 type fakeSessions struct {
-	mu   sync.Mutex
-	rows map[string]application.SessionRecord
+	mu      sync.Mutex
+	rows    map[string]application.SessionRecord
+	touches int
 }
 
 func (f *fakeSessions) Create(_ context.Context, r application.SessionRecord) error {
@@ -81,6 +83,16 @@ func (f *fakeSessions) Revoke(_ context.Context, id string, _ time.Time) error {
 	r := f.rows[id]
 	r.Revoked = true
 	f.rows[id] = r
+	return nil
+}
+
+func (f *fakeSessions) Touch(_ context.Context, id string, at time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r := f.rows[id]
+	r.LastSeenAt = at
+	f.rows[id] = r
+	f.touches++
 	return nil
 }
 
@@ -259,11 +271,12 @@ func TestWrongPasswordAndUnknownEmailLookTheSame(t *testing.T) {
 	}
 }
 
-func TestDeactivatedUserCannotSignIn(t *testing.T) {
+func TestDeactivatedUserCannotSignInAndLearnsNothing(t *testing.T) {
 	svc := newService(newFakeStore(t, "ana@example.com", "secret123", false))
-	_, err := svc.Login(context.Background(), "ana@example.com", "secret123", office)
-	if got := status(t, err); got != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403", got)
+	_, right := svc.Login(context.Background(), "ana@example.com", "secret123", office)
+	_, wrong := svc.Login(context.Background(), "ana@example.com", "nope-nope", office)
+	if status(t, right) != http.StatusUnauthorized || right.Error() != wrong.Error() {
+		t.Fatalf("the right password on a deactivated account must answer like a wrong one: %v / %v", right, wrong)
 	}
 }
 
@@ -372,18 +385,117 @@ func TestSprayingFromOneAddressIsLimited(t *testing.T) {
 
 func TestAFloodOfKeysNeitherGrowsMemoryNorLocksEveryoneOut(t *testing.T) {
 	l := application.NewLimiter(time.Minute, 10)
-	if !l.Reserve(application.Rule{Key: "busy", Max: 2}) {
+	if _, ok := l.Reserve(application.Rule{Key: "busy", Max: 2}); !ok {
 		t.Fatal("first attempt refused")
 	}
 	for i := 0; i < 100; i++ {
 		l.Reserve(application.Rule{Key: fmt.Sprint("flood-", i), Max: 5}, application.Rule{Key: "busy", Max: 1000})
 	}
-	if !l.Reserve(application.Rule{Key: "fresh", Max: 5}) {
+	if _, ok := l.Reserve(application.Rule{Key: "fresh", Max: 5}); !ok {
 		t.Fatal("a full limiter locked a new person out")
 	}
 	// "busy" was used all along: it is still counted, not dropped by the flood.
-	if l.Reserve(application.Rule{Key: "busy", Max: 101}) {
+	if _, ok := l.Reserve(application.Rule{Key: "busy", Max: 101}); ok {
 		t.Fatal("a key in use was dropped")
+	}
+}
+
+func TestAFloodOfAddressesCannotPushOutAnAccountsCounter(t *testing.T) {
+	l := application.NewLimiter(time.Minute, 10)
+	for i := 0; i < 3; i++ {
+		l.Reserve(application.Rule{Key: "e:ana@example.com", Max: 3})
+	}
+	for i := 0; i < 10_000; i++ { // a large IPv6 range, one /64 per attempt
+		l.Reserve(application.Rule{Key: fmt.Sprintf("ip:2001:db8:%x::/64", i), Max: 5})
+	}
+	if _, ok := l.Reserve(application.Rule{Key: "e:ana@example.com", Max: 3}); ok {
+		t.Fatal("a flood of addresses evicted the account's counter")
+	}
+}
+
+func TestSuccessfulSignInsFromOneAddressAreNeverLimited(t *testing.T) {
+	store := newFakeStore(t, "ana@example.com", "secret123", true)
+	svc := newService(store)
+	// An office behind one NAT: far more sign-ins than the per-address budget, all good ones.
+	for i := 0; i < 3*20+5; i++ {
+		if _, err := svc.Login(context.Background(), "ana@example.com", "secret123", office); err != nil {
+			t.Fatalf("sign-in %d from the shared address refused: %v", i+1, err)
+		}
+	}
+}
+
+func TestFailuresSlowDownThenRecover(t *testing.T) {
+	svc := newService(newFakeStore(t, "ana@example.com", "secret123", true))
+	now := time.Now()
+	application.SetClock(svc, func() time.Time { return now })
+	for i := 0; i < 5; i++ {
+		_, _ = svc.Login(context.Background(), "ana@example.com", "wrong-pass", office)
+	}
+	_, err := svc.Login(context.Background(), "ana@example.com", "secret123", office)
+	var tm *application.TooManyError
+	if !errors.As(err, &tm) || status(t, err) != http.StatusTooManyRequests || tm.RetryAfter < time.Second || tm.RetryAfter > 5*time.Minute {
+		t.Fatalf("want 429 with a short Retry-After, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Coba lagi dalam") {
+		t.Fatalf("the message must say when: %q", err)
+	}
+	now = now.Add(tm.RetryAfter)
+	if _, err := svc.Login(context.Background(), "ana@example.com", "secret123", office); err != nil {
+		t.Fatalf("after waiting, the right password must work: %v", err)
+	}
+}
+
+func TestSomeoneGuessingCannotLockTheOwnerOutForLong(t *testing.T) {
+	svc := newService(newFakeStore(t, "ana@example.com", "secret123", true))
+	now := time.Now()
+	application.SetClock(svc, func() time.Time { return now })
+	// Many addresses guessing Ana's password, each attempt let through by its own counters.
+	for i := 0; i < 60; i++ {
+		_, _ = svc.Login(context.Background(), "ana@example.com", "wrong-pass", application.Client{IP: fmt.Sprintf("198.51.100.%d", i)})
+		now = now.Add(2 * time.Second)
+	}
+	// Ana, from her own address, waits at most the account's longest delay.
+	now = now.Add(30 * time.Second)
+	if _, err := svc.Login(context.Background(), "ana@example.com", "secret123", office); err != nil {
+		t.Fatalf("the owner was locked out by someone else's guesses: %v", err)
+	}
+}
+
+func TestAnIdleSessionEndsAndAnUsedOneLives(t *testing.T) {
+	store := newFakeStore(t, "ana@example.com", "secret123", true)
+	sessions := &fakeSessions{rows: map[string]application.SessionRecord{}}
+	svc := application.NewService(application.Deps{Users: store, Sessions: sessions, Resets: &fakeResets{rows: map[string]*application.ResetRecord{}},
+		Tokens: application.NewTokens(secret, 24*time.Hour, "app"), Limiter: application.NewLimiter(time.Minute, 1000), Audit: noAudit{},
+		IdleTimeout: time.Hour})
+	now := time.Now()
+	application.SetClock(svc, func() time.Time { return now })
+	s := login(t, svc, "ana@example.com", "secret123")
+	for i := 0; i < 5; i++ { // used every 50 minutes: never idle for an hour
+		now = now.Add(50 * time.Minute)
+		if _, err := svc.Resolve(context.Background(), s.Token); err != nil {
+			t.Fatalf("a session in use ended after %d×50m: %v", i+1, err)
+		}
+	}
+	before := sessions.touches
+	if _, err := svc.Resolve(context.Background(), s.Token); err != nil || sessions.touches != before {
+		t.Fatalf("a request within the minute must not write again (touches %d → %d): %v", before, sessions.touches, err)
+	}
+	now = now.Add(61 * time.Minute)
+	if _, err := svc.Resolve(context.Background(), s.Token); status(t, err) != http.StatusUnauthorized {
+		t.Fatalf("a session unused for over an hour still works: %v", err)
+	}
+}
+
+func TestSigningInAgainEndsTheBrowsersOldSession(t *testing.T) {
+	svc := newService(newFakeStore(t, "ana@example.com", "secret123", true))
+	old := login(t, svc, "ana@example.com", "secret123")
+	from := office
+	from.PreviousToken = old.Token
+	if _, err := svc.Login(context.Background(), "ana@example.com", "secret123", from); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Resolve(context.Background(), old.Token); status(t, err) != http.StatusUnauthorized {
+		t.Fatalf("the browser's old session survived a new sign-in: %v", err)
 	}
 }
 

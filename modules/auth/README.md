@@ -10,21 +10,42 @@ session row, and sets an HS256 JWT naming that row (`jti`), the user (`sub`), an
 development. A non-browser client sends `"return_token": true` to get the token in the body and
 uses `Authorization: Bearer`. Every guarded request checks the token, the session row, and the
 user: a session ends on **sign-out** (`POST /api/v1/auth/logout` revokes the row, so a copied
-token stops working too), on **deactivation** or deletion, and when the user's **password
-changes** (sessions opened before `PasswordChangedAt` are refused). `GET /api/v1/auth/me` returns
+token stops working too), on **deactivation** or deletion, when the user's **password
+changes** (sessions opened before `PasswordChangedAt` are refused), and after
+**`SESSION_IDLE_TIMEOUT`** without use (default 60 minutes; `0` turns it off): every guarded
+request moves the deadline, writing `last_seen_at` at most once a minute. `JWT_EXPIRES_IN`
+(default 24h) still ends any session. Signing in again in a browser ends the session it held. `GET /api/v1/auth/me` returns
 the signed-in user.
 
-**Hardening.** One message for every failed sign-in; an unknown email costs as much time as a
-wrong password. Each attempt is counted before the password is checked (no parallel slip-through)
-against three limits per 15 minutes: 5 per email from one address, 20 per address over any
-accounts, 30 per account from anywhere — the address is the real client behind nginx
-(`TRUSTED_PROXIES`), and an IPv6 client counts as its /64. Emails over 254 and passwords over 72
-bytes are refused before any work. The limiter's memory is capped by dropping the least recently
-used keys, so a flood of addresses never locks everyone out; the password flows have a limiter of
-their own. A session starts when its password is checked, so a sign-in that races a password
-change does not outlive it. A failed sign-in with an unknown email is recorded masked
-(`b***@example.com`): what was typed may be a password. `JWT_SECRET` must be ≥ 32 characters in production or the API
-does not start. Cross-site writes and non-JSON bodies are refused by the kernel (v4).
+**Hardening.** One message for every failed sign-in — a deactivated account with the right
+password answers like a wrong one, so the answer never confirms a password; an unknown email
+costs as much time as a wrong password. Emails over 254 and passwords over 72 bytes are refused
+before any work. `JWT_SECRET` must be ≥ 32 characters in production or the API does not start.
+Cross-site writes and non-JSON bodies are refused by the kernel (v4).
+
+**Sign-in limits** slow guessing down instead of locking accounts (OWASP ASVS 5.0 V6.1.1:
+prevent malicious lockout; NIST SP 800-63B-4 §3.2.2). Each attempt is counted before the
+password is checked, so parallel requests cannot slip through. Per 15 minutes, with each key's
+free attempts first and then a wait before each next one (1s, doubling, up to its longest wait);
+a refusal is `429` with `Retry-After` and says in words how long to wait:
+
+| Key | Free | Longest wait | At most |
+|---|---|---|---|
+| one email from one address | 5 | 5 minutes | 30 |
+| one email from anywhere | 10 | 30 seconds — someone guessing a victim's password slows the victim down by seconds, never locks them out | 100 |
+| one address (password spraying) | 20 | 1 minute | 200 |
+| one IPv6 /48 (an attacker cycling through its /64s) | 100 | 1 minute | 1000 |
+
+A **successful sign-in is not held against its address**: an office or a mobile carrier behind
+one NAT never slows its own people down; the address's *failed* attempts stay counted. The
+address is the real client behind nginx (`TRUSTED_PROXIES`); an IPv6 client counts as its /64.
+The limiter is in memory and per process: each kind of key (email, address, …) keeps at most
+50 000 keys, dropping the least recently used, so a flood of addresses can push out only
+addresses — never an account's counter — and every check is O(1). A restart forgets, and with
+several API replicas each counts on its own (the limits multiply by the replica count). The
+password flows have a limiter of their own. A session starts when its password is checked, so a
+sign-in that races a password change does not outlive it. A failed sign-in with an unknown email
+is recorded masked (`b***@example.com`): what was typed may be a password.
 
 **Passwords.** Two optional ports switch the password features on:
 `PasswordWriter` (ready-made adapter: `users`) and `Mailer` (ready-made adapter: `mailer`).
@@ -61,9 +82,23 @@ guards its routes through that slot, never by importing auth.
 `guard` (`RequireAuth`: loads the session, redirects to `/login?next=…`, signs out on any 401),
 and `UserMenu` in the `"sidebar-footer"` slot. Replaces the scaffold's starter `auth` module.
 
-**Not in this version:** refresh tokens, 2FA, SSO, passwordless sign-in.
+**Not in this version:** refresh tokens, 2FA, SSO, passwordless sign-in, a shared limiter store
+for several replicas, a list of one's sessions.
 
 ## Changes
+
+- **0.8.0** — Sign-in limits slow guessing down instead of locking accounts: free attempts, then
+  a doubling wait with a cap per key (table above), `429` with `Retry-After`; a successful
+  sign-in no longer counts against its address (an office behind one NAT was locked out at the
+  start of the day); an IPv6 /48 counter; keys kept per kind in an O(1) least-recently-used list,
+  so a flood of addresses cannot evict an account's counter or slow the API. A deactivated account
+  answers like a wrong password (was `403`, which confirmed the password) and is audited as
+  `auth.sign_in_failed`. Idle timeout `SESSION_IDLE_TIMEOUT` (default 60m; migration 003 adds
+  `last_seen_at`; OWASP ASVS 5.0 V7.3.1). Signing in again ends the browser's previous session.
+  Sources: OWASP ASVS 5.0 V6/V7 (https://github.com/OWASP/ASVS), NIST SP 800-63B-4
+  (https://pages.nist.gov/800-63-4/sp800-63b.html), OWASP Authentication Cheat Sheet
+  (https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html), RFC 9110
+  §10.2.3 (`Retry-After`).
 
 - **0.7.0** — `GET /auth/me` and `POST /auth/password` go through the kernel's `d.Auth.Require`,
   so they carry the request's scope like every other guarded route; a signed-in user the API

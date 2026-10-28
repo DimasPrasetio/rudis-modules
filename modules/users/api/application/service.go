@@ -46,6 +46,8 @@ type Repository interface {
 	IDs(ctx context.Context) ([]int64, error)
 	CountAll(ctx context.Context) (int64, error)
 	Get(ctx context.Context, id int64) (domain.User, error)
+	// GetForUpdate is Get holding the row's lock until the transaction ends (SELECT … FOR UPDATE).
+	GetForUpdate(ctx context.Context, id int64) (domain.User, error)
 	GetByEmail(ctx context.Context, email string) (domain.User, error)
 	GetCredentialsByEmail(ctx context.Context, email string) (Credentials, error)
 	Create(ctx context.Context, u NewUser) (int64, error)
@@ -235,7 +237,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (domain.User, erro
 	return s.repo.Get(ctx, id)
 }
 
-// Update changes a user. actorID is the signed-in user: nobody can deactivate themselves.
+// Update changes a user. actorID is the signed-in user: nobody can deactivate themselves, and
+// one's own email and password are not changed here — the password through the auth provider,
+// which checks the current one first; the email by another administrator — so an open session
+// left unattended is not enough to take the account over.
+//
+// The row is read under its lock and written, with the new password and the audit record, in
+// one transaction: two administrators acting at once cannot undo each other's change (a rename
+// bringing back an account just deactivated), and a failure leaves nothing half done.
 func (s *Service) Update(ctx context.Context, actorID, id int64, in UpdateInput) (domain.User, error) {
 	in.Email = domain.NormalizeEmail(in.Email)
 	var v validator.Validator
@@ -249,40 +258,59 @@ func (s *Service) Update(ctx context.Context, actorID, id int64, in UpdateInput)
 	if id == actorID && in.IsActive != nil && !*in.IsActive {
 		return domain.User{}, apperror.Conflict("Anda tidak dapat menonaktifkan akun sendiri")
 	}
+	if id == actorID && in.Password != "" {
+		return domain.User{}, apperror.Forbidden("Kata sandi Anda sendiri diganti lewat menu Ubah kata sandi, yang memeriksa kata sandi saat ini")
+	}
 	if id != actorID {
 		if err := s.here(ctx, id); err != nil {
 			return domain.User{}, err
 		}
-	}
-	u, err := s.repo.Get(ctx, id)
-	if err != nil {
-		return domain.User{}, notFound(err)
-	}
-	// Someone else's account: only when it holds no permission the actor lacks — an operator
-	// cannot reset an administrator's password, change their email, or deactivate them — and,
-	// with placements, only by someone managing users everywhere the account works.
-	if id != actorID && !s.guard.Covers(ctx, id) {
-		return domain.User{}, apperror.Forbidden("Anda tidak dapat mengubah pengguna yang memiliki hak lebih tinggi")
-	}
-	if id != actorID {
+		// Someone else's account: only when it holds no permission the actor lacks — an operator
+		// cannot reset an administrator's password, change their email, or deactivate them — and,
+		// with placements, only by someone managing users everywhere the account works.
+		if !s.guard.Covers(ctx, id) {
+			return domain.User{}, apperror.Forbidden("Anda tidak dapat mengubah pengguna yang memiliki hak lebih tinggi")
+		}
 		if err := s.managesEverywhere(ctx, id); err != nil {
 			return domain.User{}, err
 		}
 	}
-	before := u
-	u.Name, u.Email = in.Name, in.Email
-	if in.IsActive != nil {
-		u.IsActive = *in.IsActive
-	}
-	if err := s.repo.Update(ctx, u); err != nil {
-		return domain.User{}, emailTaken(notFound(err))
-	}
+	// Hashed before the lock is taken: bcrypt is slow on purpose.
+	var hash string
 	if in.Password != "" {
-		if err := s.setPassword(ctx, id, in.Password); err != nil {
+		var err error
+		if hash, err = s.hasher.Hash(in.Password); err != nil {
 			return domain.User{}, err
 		}
 	}
-	s.recordUpdate(ctx, before, u, in.Password != "")
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		u, err := s.repo.GetForUpdate(ctx, id)
+		if err != nil {
+			return notFound(err)
+		}
+		if id == actorID && in.Email != u.Email {
+			return apperror.Forbidden("Email akun Anda sendiri diubah oleh administrator lain")
+		}
+		before := u
+		u.Name, u.Email = in.Name, in.Email
+		if in.IsActive != nil {
+			u.IsActive = *in.IsActive
+		}
+		if err := s.repo.Update(ctx, u); err != nil {
+			return emailTaken(notFound(err))
+		}
+		if hash != "" {
+			// Recording when it changed ends every session opened before (the auth provider checks).
+			if err := s.repo.UpdatePassword(ctx, id, hash, time.Now().UTC()); err != nil {
+				return err
+			}
+		}
+		s.recordUpdate(ctx, before, u, hash != "")
+		return nil
+	})
+	if err != nil {
+		return domain.User{}, err
+	}
 	return s.repo.Get(ctx, id)
 }
 

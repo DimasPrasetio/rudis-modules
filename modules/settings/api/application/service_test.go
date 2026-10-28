@@ -29,13 +29,13 @@ func (m *memRepo) Get(_ context.Context, name string, dst any) (bool, error) {
 	return true, json.Unmarshal(raw, dst)
 }
 
-func (m *memRepo) Update(_ context.Context, name string, _ int64, dst any, change func() error) error {
+func (m *memRepo) Update(ctx context.Context, name string, _ int64, dst any, change func(ctx context.Context) error) error {
 	if raw, ok := m.rows[name]; ok {
 		if err := json.Unmarshal(raw, dst); err != nil {
 			return err
 		}
 	}
-	if err := change(); err != nil {
+	if err := change(ctx); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(dst)

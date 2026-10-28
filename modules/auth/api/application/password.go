@@ -108,8 +108,8 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, current, nex
 		return Session{}, err
 	}
 	key := fmt.Sprintf("cp:%d", userID)
-	if !s.flows.Reserve(Rule{key, maxChangesPerUser}) {
-		return Session{}, errTooMany
+	if wait, ok := s.flows.Reserve(Rule{Key: key, Max: maxChangesPerUser}); !ok {
+		return Session{}, tooMany("mengganti kata sandi", wait)
 	}
 	user, err := s.users.FindUser(ctx, userID)
 	if err != nil {
@@ -158,7 +158,7 @@ func (s *Service) RequestReset(ctx context.Context, email string, from Client) e
 	if err := v.Err(); err != nil {
 		return err
 	}
-	if !s.flows.Reserve(Rule{"fp-ip:" + ClientKey(from.IP), maxResetsPerIP}, Rule{"fp-e:" + email, maxResetsPerEmail}) {
+	if _, ok := s.flows.Reserve(Rule{Key: "fp-ip:" + ClientKey(from.IP), Max: maxResetsPerIP}, Rule{Key: "fp-e:" + email, Max: maxResetsPerEmail}); !ok {
 		return nil
 	}
 	// Detached from the request (which ends with the answer) but keeping its values, so the
@@ -222,8 +222,8 @@ func (s *Service) ResetPassword(ctx context.Context, token, next string, from Cl
 	if err := v.Err(); err != nil {
 		return err
 	}
-	if !s.flows.Reserve(Rule{"rp-ip:" + ClientKey(from.IP), maxResetUsesPerIP}) {
-		return errTooMany
+	if wait, ok := s.flows.Reserve(Rule{Key: "rp-ip:" + ClientKey(from.IP), Max: maxResetUsesPerIP}); !ok {
+		return tooMany("mengatur ulang kata sandi", wait)
 	}
 	rec, err := s.resets.Find(ctx, hashToken(token))
 	if errors.Is(err, ErrNoReset) {

@@ -4,7 +4,9 @@ package presentation
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -90,6 +92,16 @@ func client(r *http.Request) application.Client {
 	return application.Client{IP: request.ClientIP(r), UserAgent: r.UserAgent()}
 }
 
+// fail answers err; an attempt the limiter refused also says when to try again (Retry-After,
+// RFC 9110 §10.2.3), so a client waits instead of retrying blindly.
+func fail(w http.ResponseWriter, r *http.Request, err error) {
+	var tm *application.TooManyError
+	if errors.As(err, &tm) {
+		w.Header().Set("Retry-After", strconv.Itoa(int(tm.RetryAfter/time.Second)))
+	}
+	response.Error(w, r, err)
+}
+
 func (h *Handler) options(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, "Fitur akun", h.svc.Options())
 }
@@ -109,7 +121,7 @@ func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
 	uid, _ := h.UserID(r.Context())
 	s, err := h.svc.ChangePassword(r.Context(), uid, in.CurrentPassword, in.NewPassword, client(r))
 	if err != nil {
-		response.Error(w, r, err)
+		fail(w, r, err)
 		return
 	}
 	h.setCookie(w, s.Token, s.ExpiresAt, 0)
@@ -127,7 +139,7 @@ func (h *Handler) forgot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.RequestReset(r.Context(), in.Email, client(r)); err != nil {
-		response.Error(w, r, err)
+		fail(w, r, err)
 		return
 	}
 	response.OK(w, "Jika email itu terdaftar, tautan untuk mengatur ulang kata sandi sudah dikirim. Periksa kotak masuk Anda.", nil)
@@ -145,7 +157,7 @@ func (h *Handler) reset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.ResetPassword(r.Context(), in.Token, in.NewPassword, client(r)); err != nil {
-		response.Error(w, r, err)
+		fail(w, r, err)
 		return
 	}
 	response.OK(w, "Kata sandi diperbarui. Silakan masuk dengan kata sandi baru.", nil)
@@ -157,9 +169,11 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, err)
 		return
 	}
-	s, err := h.svc.Login(r.Context(), in.Email, in.Password, client(r))
+	from := client(r)
+	from.PreviousToken = h.token(r)
+	s, err := h.svc.Login(r.Context(), in.Email, in.Password, from)
 	if err != nil {
-		response.Error(w, r, err)
+		fail(w, r, err)
 		return
 	}
 	h.setCookie(w, s.Token, s.ExpiresAt, 0)
