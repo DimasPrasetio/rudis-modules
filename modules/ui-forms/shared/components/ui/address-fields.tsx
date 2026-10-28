@@ -43,24 +43,35 @@ export interface AddressFieldsProps {
   /** Fields that must be filled; "line" by default. */
   required?: (keyof AddressValue)[];
   disabled?: boolean;
+  /**
+   * Whose address this is, for the browser's autofill (WCAG 2.2 · 1.3.5 Identify Input Purpose):
+   * "self" — the person filling in the form (a visitor, a profile): the fields carry the
+   * address-* autocomplete tokens; "billing"/"shipping" prefix them for a checkout. Leave it
+   * out for someone else's address (a customer, a supplier) — autofill would offer the
+   * operator's own address there — and the fields say autocomplete="off".
+   */
+  autofill?: "self" | "billing" | "shipping";
 }
 
 /** A postal address as separate fields: street, city, province, postal code, and country. */
-export function AddressFields({ value, onChange, errors = {}, countries, labels, required = ["line"], disabled }: AddressFieldsProps) {
+export function AddressFields({ value, onChange, errors = {}, countries, labels, required = ["line"], disabled, autofill }: AddressFieldsProps) {
   const l = { ...DEFAULT_LABELS, ...labels };
+  const ac = (token: string) => (autofill ? (autofill === "self" ? token : `${autofill} ${token}`) : "off");
+  // Indonesian postal codes are 5 digits: a numeric keypad, unless the address is abroad.
+  const postalMode = !value.country || value.country === "ID" ? "numeric" : "text";
   const set = (k: keyof AddressValue) => (v: string) => onChange({ ...value, [k]: v });
   const req = (k: keyof AddressValue) => required.includes(k);
   return (
     <div className="grid gap-4">
       <FormField label={l.line} required={req("line")} error={errors.line}>
-        <Textarea value={value.line} onChange={(e) => set("line")(e.target.value)} rows={2} maxLength={255} disabled={disabled} />
+        <Textarea value={value.line} onChange={(e) => set("line")(e.target.value)} rows={2} maxLength={255} disabled={disabled} autoComplete={ac("street-address")} />
       </FormField>
       <FieldGrid columns={2}>
         <FormField label={l.city} required={req("city")} error={errors.city}>
-          <Input value={value.city} onChange={(e) => set("city")(e.target.value)} maxLength={100} disabled={disabled} />
+          <Input value={value.city} onChange={(e) => set("city")(e.target.value)} maxLength={100} disabled={disabled} autoComplete={ac("address-level2")} />
         </FormField>
         <FormField label={l.province} required={req("province")} error={errors.province}>
-          <Input value={value.province} onChange={(e) => set("province")(e.target.value)} maxLength={100} disabled={disabled} />
+          <Input value={value.province} onChange={(e) => set("province")(e.target.value)} maxLength={100} disabled={disabled} autoComplete={ac("address-level1")} />
         </FormField>
         <FormField label={l.postal_code} required={req("postal_code")} error={errors.postal_code}>
           <Input
@@ -68,6 +79,8 @@ export function AddressFields({ value, onChange, errors = {}, countries, labels,
             onChange={(e) => set("postal_code")(e.target.value.replace(/[^0-9A-Za-z -]/g, ""))}
             maxLength={10}
             disabled={disabled}
+            inputMode={postalMode}
+            autoComplete={ac("postal-code")}
           />
         </FormField>
         {countries && (

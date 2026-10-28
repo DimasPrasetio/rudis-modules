@@ -43,6 +43,7 @@ import { LineItemsEditor } from "@/shared/components/ui/line-items-editor";
 import { MultiToggle } from "@/shared/components/ui/multi-toggle";
 import { PasswordInput } from "@/shared/components/ui/password-input";
 import { DigitsInput } from "@/shared/components/ui/digits-input";
+import { MoneyInput } from "@/shared/components/ui/money-input";
 import { AddressFields, EMPTY_ADDRESS } from "@/shared/components/ui/address-fields";
 import { SearchSelect } from "@/shared/components/ui/search-select";
 import type { SelectOption, SelectValue } from "@/shared/components/ui/select-parts";
@@ -113,6 +114,9 @@ export default function GalleryPage() {
   const [statuses, setStatuses] = useState<string[]>(["draft"]);
   const [range, setRange] = useState({ from: "2026-10-01", to: "2026-10-16" });
   const [kv, setKv] = useState<KeyValueRow[]>([{ key: "NPWP", value: "01.234.567.8-901.000" }]);
+  const [creditLimit, setCreditLimit] = useState<string | null>("50000000");
+  const [unitPrice, setUnitPrice] = useState<string | null>("12500.5");
+  const [adjustment, setAdjustment] = useState<string | null>(null);
   const [lines, setLines] = useState<Line[]>([{ key: 1, item: "Beras 5 kg", qty: "10", price: "68000" }]);
   const [modal, setModal] = useState(false);
   const [sheet, setSheet] = useState(false);
@@ -241,6 +245,15 @@ export default function GalleryPage() {
           <FormField label="Nomor identitas" hint="Hanya angka; dikelompokkan saat tidak diketik.">
             <DigitsInput value={idNumber} onChange={setIdNumber} maxDigits={16} groups={[4, 4, 4, 4]} />
           </FormField>
+          <FormField label="Batas kredit" hint={`Rupiah utuh; nilai ke API: ${creditLimit ?? "kosong"}`}>
+            <MoneyInput value={creditLimit} onChange={setCreditLimit} />
+          </FormField>
+          <FormField label="Harga satuan" hint={`Dua desimal, mis. tempel "12.500,50"; nilai ke API: ${unitPrice ?? "kosong"}`}>
+            <MoneyInput value={unitPrice} onChange={setUnitPrice} fractionDigits={2} />
+          </FormField>
+          <FormField label="Penyesuaian" hint="Boleh negatif; batas −1.000.000 s.d. 1.000.000.">
+            <MoneyInput value={adjustment} onChange={setAdjustment} allowNegative min="-1000000" max="1000000" />
+          </FormField>
           <FormField label="Pelanggan (cari)">
             <SearchSelect options={CUSTOMERS} value={customer} onChange={setCustomer} allowClear />
           </FormField>
@@ -314,6 +327,7 @@ export default function GalleryPage() {
           ]}
           errors={address.postal_code ? {} : { postal_code: "Kode pos wajib diisi" }}
           required={["line", "postal_code"]}
+          autofill="shipping"
         />
       </Section>
 

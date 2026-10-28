@@ -33,6 +33,12 @@ a quiet header on `--background` and rows padded by `--row-py`.
 
 ## Changes
 
+- **0.5.0** — keyboard focus visible at 3:1 everywhere (WCAG 2.2 · 1.4.11, 2.4.7): checkbox,
+  radio, switch, tabs, toggle, scroll area, and dropdown items draw a solid 2px outline in
+  `--ring` (the `FOCUS_RING` / `FOCUS_RING_INSET` classes in `@/shared/lib/focus`) instead of a
+  half-transparent ring (about 1.7:1). `PageHeader` names the browser tab "<title> · <app>" and
+  restores it on leave (2.4.2); `usePageTitle` and `appName` for pages without one. The sheet's
+  close button is a 28px target. Breadcrumb labels in Indonesian ("Navigasi jejak", "Lainnya").
 - **0.4.0** — needs kernel 6. `useResource` loads again on the `scope:changed` app event:
   switching company or branch never leaves another company's data on screen.
 - **0.3.0** — `shared/hooks/use-resource.ts`: `useResource(load, deps)` loads what a page shows,

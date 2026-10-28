@@ -17,5 +17,7 @@ The list template: `PageHeader` (one primary action) → card with `Toolbar plai
 
 ## Changes
 
+- **0.2.1** — keyboard focus at 3:1: a focused row gets a solid `--ring` outline on `--accent`
+  (the half-transparent ring was about 1.7:1), and the rows-per-page select shows focus.
 - **0.2.0** — a clickable row shows a visible focus ring when reached with the keyboard
   (WCAG 2.4.7).

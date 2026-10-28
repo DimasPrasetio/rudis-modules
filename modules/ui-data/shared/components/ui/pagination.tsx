@@ -38,7 +38,7 @@ export function Pagination({ page, limit, total, onPageChange, onLimitChange, li
             <select
               value={limit}
               onChange={(e) => onLimitChange(Number(e.target.value))}
-              className="h-8 rounded-md border border-input bg-card px-2 text-sm text-foreground"
+              className="h-8 rounded-md border border-input bg-card px-2 text-sm text-foreground hover:border-muted-foreground/60 focus-visible:border-ring focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               {options.map((n) => (
                 <option key={n} value={n}>

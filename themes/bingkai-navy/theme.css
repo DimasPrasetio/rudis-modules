@@ -178,8 +178,10 @@ html[data-density="comfortable"] {
     border-color: var(--border);
   }
   html {
-    /* Keyboard focus never hides under the sticky header (WCAG 2.4.11). */
+    /* Keyboard focus never hides under the sticky header, nor under a form's sticky footer
+       (StickyFooter, about 60px) or a toast (WCAG 2.2 · 2.4.11 Focus Not Obscured). */
     scroll-padding-top: 4.5rem;
+    scroll-padding-bottom: 5rem;
   }
   body {
     margin: 0;
@@ -204,16 +206,13 @@ html[data-density="comfortable"] {
   [role="button"]:not([aria-disabled="true"]) {
     cursor: pointer;
   }
-  /* Keyboard focus is always visible (a mouse click does not trigger it). */
+  /* Keyboard focus is always visible (a mouse click does not trigger it): a solid outline in
+     --ring, 4.86:1 on card and 4.65:1 on background (WCAG 2.2 · 1.4.11 asks 3:1). Text fields
+     styled as fields turn their border --ring instead (their `outline-none` utility wins here);
+     a bare <select> or <input> keeps this outline. */
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
-  }
-  /* Form controls draw their own focus ring. */
-  input:focus-visible,
-  select:focus-visible,
-  textarea:focus-visible {
-    outline: none;
   }
   /* Numbers line up in tables and summaries. */
   td,
@@ -226,7 +225,25 @@ html[data-density="comfortable"] {
     *::before,
     *::after {
       animation-duration: 0.01ms !important;
+      /* One run, not an endless loop at 0.01ms (that flickers): a spinner then stands still and
+         the busy state is told by its text and aria-busy. */
+      animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
   }
+}
+
+/* Outside every layer, so it wins over the `outline-none` utility: the kernel's Button (and the
+   sidebar trigger built on it) draws a half-transparent ring, about 1.7:1 — under the 3:1 of
+   WCAG 1.4.11. Keyboard users get the same solid outline as every other control instead; the
+   faint ring is switched off so the two do not stack. */
+:is([data-slot="button"], [data-slot="sidebar-trigger"]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  --tw-ring-shadow: 0 0 #0000;
+}
+/* On the navy frame the outline turns light: --sidebar-ring is 6.77:1 on --sidebar (--ring would
+   be 3.44:1). Sidebar menu items draw their own --sidebar-ring ring. */
+[data-sidebar="sidebar"] [data-slot="button"]:focus-visible {
+  outline-color: var(--sidebar-ring);
 }
