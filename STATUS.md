@@ -116,10 +116,10 @@ fixed; add one when you accept a limit.
 Newest first. One entry per change that released something or changed how the library works:
 date, what, the tags it created.
 
-- **28 Oct 2026 — ROADMAP.md: 50 modules to build.**
+- **28 Oct 2026 — ROADMAP.md: 88 modules to build.**
   - The old module plans (PLAN-MODUL-BERSAMA) and the candidate table under Next were removed;
-    [ROADMAP.md](ROADMAP.md) now lists the 50 modules in seven waves, from internet research, and
-    is ticked off as modules are released.
+    [ROADMAP.md](ROADMAP.md) now lists 88 modules in eight waves, from internet research, with the
+    rule for how large one module may be, and is ticked off as modules are released.
 
 - **27 Oct 2026 — rudis-modules, first version.**
   - Started from the existing module library as a fresh repository: 21 modules, 1 preset, kernel 6.
