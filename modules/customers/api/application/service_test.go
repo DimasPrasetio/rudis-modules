@@ -54,7 +54,10 @@ func (m *memRepo) List(_ context.Context, co int64, f application.ListFilter) ([
 				continue
 			}
 		}
-		if f.Search != "" && !strings.Contains(c.Name, f.Search) && !strings.Contains(c.Code, f.Search) && !strings.HasPrefix(c.TaxID, f.Search) {
+		// As the SQL: a person's tax ID matches only whole; a company's NPWP also by prefix.
+		taxHit := f.TaxSearch != "\x00" && c.TaxID != "" && (c.TaxID == f.TaxSearch ||
+			(c.TaxIDKind == taxid.NPWP && c.PartyType != domain.Individual && strings.HasPrefix(c.TaxID, "0") && strings.HasPrefix(c.TaxID, f.TaxSearch)))
+		if f.Search != "" && !strings.Contains(c.Name, f.Search) && !strings.Contains(c.Code, f.Search) && !taxHit {
 			continue
 		}
 		out = append(out, c)
@@ -63,8 +66,8 @@ func (m *memRepo) List(_ context.Context, co int64, f application.ListFilter) ([
 	return out, int64(len(out)), nil
 }
 
-func (m *memRepo) Search(ctx context.Context, co int64, q string, limit int) ([]domain.Customer, error) {
-	rows, _, err := m.List(ctx, co, application.ListFilter{Search: q, Status: "active"})
+func (m *memRepo) Search(ctx context.Context, co int64, q, taxQ string, limit int) ([]domain.Customer, error) {
+	rows, _, err := m.List(ctx, co, application.ListFilter{Search: q, TaxSearch: taxQ, Status: "active"})
 	return rows[:min(limit, len(rows))], err
 }
 
@@ -579,5 +582,94 @@ func TestContacts(t *testing.T) {
 	}
 	if _, err := svc.SaveContact(ctx, cu.ID, domain.Contact{Name: "C", Email: "bukan email"}); !fields(t, err)["email"] {
 		t.Errorf("a bad email: %v", err)
+	}
+}
+
+func TestSearchMatchesAPersonsTaxIDOnlyWhole(t *testing.T) {
+	svc, _, _, ctx := setup(t, everything())
+	co := company("PT Cari")
+	co.TaxIDKind, co.TaxID = taxid.NPWP, "0013024427092000"
+	create(t, svc, ctx, co)
+	p := domain.Customer{Name: "Budi", PartyType: domain.Individual, TaxIDKind: taxid.NIK, TaxID: "3201011508900001"}
+	create(t, svc, ctx, p)
+	for q, want := range map[string]int{
+		"0013024":              1, // a company's NPWP by prefix
+		"01.302.442.7-092.000": 1, // …or as typed, the old 15 digits
+		"3201":                 0, // a person's NIK never by prefix: no digit can be guessed one by one
+		"320101150890000":      0,
+		"3201011508900001":     1, // …only whole
+	} {
+		rows, total, err := svc.List(ctx, application.ListFilter{Search: q})
+		if err != nil || int(total) != want {
+			t.Errorf("List(%q) = %d rows, %v; want %d", q, total, err, want)
+		}
+		for _, r := range rows {
+			if r.PartyType == domain.Individual && r.TaxID != "3201********0001" {
+				t.Errorf("List(%q) shows a person's NIK as %q", q, r.TaxID)
+			}
+		}
+		if found, _ := svc.Search(ctx, q, 10); len(found) != want {
+			t.Errorf("Search(%q) = %d; want %d", q, len(found), want)
+		}
+	}
+}
+
+func TestAnIndividualsNPWPIsMaskedAndMustBeANIK(t *testing.T) {
+	svc, _, _, ctx := setup(t, everything())
+	p := domain.Customer{Name: "Sari", PartyType: domain.Individual, TaxIDKind: taxid.NPWP, TaxID: "3201015508900002", IsPKP: true}
+	saved := create(t, svc, ctx, p)
+	if saved.TaxID != "3201********0002" {
+		t.Errorf("an individual's NPWP (her NIK) comes back %q; want it masked", saved.TaxID)
+	}
+	for name, bad := range map[string]domain.Customer{
+		"a NIK-shaped NPWP for a company": {Name: "X", PartyType: domain.Company, TaxIDKind: taxid.NPWP, TaxID: "3201011508900001"},
+		"an NPWP that is no NIK":          {Name: "X", PartyType: domain.Individual, TaxIDKind: taxid.NPWP, TaxID: "3201234567890001"},
+		"the Coretax placeholder":         {Name: "X", PartyType: domain.Company, TaxIDKind: taxid.NPWP, TaxID: "0000000000000000"},
+		"a NIK of no province":            {Name: "X", PartyType: domain.Individual, TaxIDKind: taxid.NIK, TaxID: "9901011508900001"},
+		"a PKP with another document":     {Name: "X", PartyType: domain.Individual, TaxIDKind: taxid.Other, TaxID: "KITAS123", IsPKP: true},
+	} {
+		if _, err := svc.Create(ctx, application.Input{Customer: bad}); err == nil || status(t, err) != http.StatusUnprocessableEntity {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	other := create(t, svc, ctx, domain.Customer{Name: "Kim", PartyType: domain.Individual, IsForeign: true, Country: "KR", TaxIDKind: taxid.Other, TaxID: "kitas 2c11ab"})
+	if other.TaxID != taxid.Mask("KITAS2C11AB") {
+		t.Errorf("an Other document comes back %q; want it in capitals, masked", other.TaxID)
+	}
+}
+
+func TestAChangedNPWPMovesTheDefaultNITKU(t *testing.T) {
+	svc, repo, _, ctx := setup(t, everything())
+	c := company("PT Pindah")
+	c.TaxIDKind, c.TaxID = taxid.NPWP, "0013024427092000"
+	cu := create(t, svc, ctx, c)
+	hq, err := svc.SaveAddress(ctx, cu.ID, domain.Address{Label: "Pusat", Line: "Jl. A 1", ForBilling: true, IsDefaultBilling: true, NITKU: "0013024427092000000000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cu.TaxID = "0019876543210000"
+	if _, err := svc.Update(ctx, cu.ID, application.Input{Customer: cu}); err != nil {
+		t.Fatalf("an NPWP change: %v", err)
+	}
+	if got := repo.addresses[hq.ID].NITKU; got != "0019876543210000000000" {
+		t.Errorf("the head office's default NITKU followed the NPWP: %q", got)
+	}
+	if _, err := svc.SaveAddress(ctx, cu.ID, domain.Address{Label: "Cabang", Line: "Jl. B 2", ForBilling: true, NITKU: "0019876543210000000001"}); err != nil {
+		t.Fatal(err)
+	}
+	cu.TaxID = "0011111111111000"
+	_, err = svc.Update(ctx, cu.ID, application.Input{Customer: cu})
+	if !fields(t, err)["tax_id"] {
+		t.Fatalf("a branch NITKU of the old NPWP must refuse the change: %v", err)
+	}
+	if got := repo.customers[cu.ID].TaxID; got != "0019876543210000" {
+		t.Errorf("a refused change kept the NPWP: %q", got)
+	}
+	// Data saved before this rule: Snapshot refuses to print a NITKU of another NPWP.
+	a := repo.addresses[hq.ID]
+	a.NITKU = "0099999999999999000000"
+	repo.addresses[hq.ID] = a
+	if _, _, err := svc.Snapshot(ctx, cu.ID, 0); !errors.Is(err, application.ErrInconsistent) {
+		t.Errorf("Snapshot of an inconsistent NITKU = %v", err)
 	}
 }

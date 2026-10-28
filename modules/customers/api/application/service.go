@@ -36,9 +36,13 @@ var (
 // ListFilter is a page of the customer list.
 type ListFilter struct {
 	Search string
-	Status string // "", "active", "on_hold", "inactive"
-	Limit  int
-	Offset int
+	// TaxSearch is Search as tax IDs are compared (taxid.SearchForm): only a company's or
+	// government's NPWP matches by prefix; a person's ID only whole, so no masked digit can be
+	// guessed one by one.
+	TaxSearch string
+	Status    string // "", "active", "on_hold", "inactive"
+	Limit     int
+	Offset    int
 }
 
 // Settings are a company's code prefix and counter.
@@ -71,7 +75,7 @@ func (e *DuplicateTaxIDError) Error() string {
 // Repository is the cust_* tables.
 type Repository interface {
 	List(ctx context.Context, company int64, f ListFilter) ([]domain.Customer, int64, error)
-	Search(ctx context.Context, company int64, q string, limit int) ([]domain.Customer, error)
+	Search(ctx context.Context, company int64, q, taxQ string, limit int) ([]domain.Customer, error)
 	Get(ctx context.Context, company, id int64) (domain.Customer, error)
 	// GetShared is Get holding the row shared until the transaction ends.
 	GetShared(ctx context.Context, company, id int64) (domain.Customer, error)
@@ -175,15 +179,28 @@ func notFound(err error) error {
 // Masked is a customer as lists and details show it: a NIK or passport number is masked (UU PDP);
 // an NPWP of a company is not personal data and shows whole.
 func Masked(c domain.Customer) domain.Customer {
-	if c.TaxIDKind == taxid.NIK || c.TaxIDKind == taxid.Passport {
+	if c.TaxIDIsPersonal() {
 		c.TaxID = taxid.Mask(c.TaxID)
 	}
 	return c
 }
 
+// noTaxSearch is the tax search of a query that holds none: a NUL, which no stored tax ID equals
+// or starts with.
+const noTaxSearch = "\x00"
+
+// taxSearch is q as the queries compare it with tax IDs (taxid.SearchForm), never empty.
+func taxSearch(q string) string {
+	if t := taxid.SearchForm(q); t != "" {
+		return t
+	}
+	return noTaxSearch
+}
+
 // List is a page of the company's customers, masked.
 func (s *Service) List(ctx context.Context, f ListFilter) ([]domain.Customer, int64, error) {
 	f.Search = strings.TrimSpace(f.Search)
+	f.TaxSearch = taxSearch(f.Search)
 	switch f.Status {
 	case "", "active", "on_hold", "inactive":
 	default:
@@ -378,13 +395,17 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (Saved, error)
 				return err
 			}
 		}
+		moved, err := s.moveNITKUs(ctx, co, id, before.TaxIDForNITKU(), c.TaxIDForNITKU())
+		if err != nil {
+			return err
+		}
 		c.ID, c.CompanyID, c.IsActive, c.OnHold, c.HoldReason = id, co, before.IsActive, before.OnHold, before.HoldReason
 		c.CreatedBy, c.CreatedAt, c.UpdatedBy, c.UpdatedAt = before.CreatedBy, before.CreatedAt, actor, s.clock.Now()
 		if err := s.repo.Update(ctx, c); err != nil {
 			return codeTaken(err)
 		}
 		s.audit.Record(ctx, kernel.AuditEntry{Module: "customers", Action: "customer.updated", Target: target(id),
-			Summary: "Mengubah pelanggan " + c.Code + " " + c.Name, Data: map[string]any{"code": c.Code, "name": c.Name}})
+			Summary: "Mengubah pelanggan " + c.Code + " " + c.Name, Data: map[string]any{"code": c.Code, "name": c.Name, "nitku_moved": moved}})
 		if termsChanged {
 			s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "customers", Action: "customer.terms_changed", Target: target(id),
 				Summary: "Mengubah termin dan batas kredit pelanggan " + c.Code, Data: map[string]any{"before": termsData(before), "after": termsData(c)}})
@@ -393,6 +414,42 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (Saved, error)
 		return nil
 	})
 	return saved, err
+}
+
+// moveNITKUs keeps the customer's addresses true to a changed NPWP, inside the caller's transaction:
+// a head-office default NITKU follows the NPWP, and an address whose NITKU belongs to neither
+// refuses the change — Coretax rejects a NITKU that is not the buyer's ("NITKU pembeli tidak
+// valid"). Returns how many addresses it changed.
+func (s *Service) moveNITKUs(ctx context.Context, co, id int64, oldNPWP, newNPWP string) (int, error) {
+	if oldNPWP == newNPWP {
+		return 0, nil
+	}
+	addrs, err := s.repo.Addresses(ctx, co, id)
+	if err != nil {
+		return 0, err
+	}
+	var stale []string
+	var change []domain.Address
+	for _, a := range addrs {
+		nitku, ok := domain.MovedNITKU(a.NITKU, oldNPWP, newNPWP)
+		switch {
+		case !ok:
+			stale = append(stale, a.Label)
+		case nitku != a.NITKU:
+			a.NITKU, a.UpdatedAt = nitku, s.clock.Now()
+			change = append(change, a)
+		}
+	}
+	if len(stale) > 0 {
+		return 0, apperror.Validation([]validator.FieldError{{Field: "tax_id",
+			Message: "NITKU alamat " + strings.Join(stale, ", ") + " bukan milik NPWP baru — ubah atau kosongkan NITKU alamat itu dulu"}})
+	}
+	for _, a := range change {
+		if err := s.repo.UpdateAddress(ctx, a); err != nil {
+			return 0, err
+		}
+	}
+	return len(change), nil
 }
 
 // SetActive deactivates or reactivates a customer. Its documents stay; new ones may not use it.

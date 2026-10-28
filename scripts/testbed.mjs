@@ -1616,6 +1616,41 @@ async function documents() {
       expect("activated again", (await clerk.call("POST", `${CU}/${maju.id}/activate`)).status === 200);
       expect("…and the invoice posts", (await post(admin, sale.id)).status === 200);
 
+      // Tax identity (taxid 0.2.0, customers/suppliers 0.2.0): no prefix oracle on a person's ID,
+      // an individual's NPWP masked, NITKU kept true to a changed NPWP, Coretax's "Other" ID.
+      res = await admin.call("GET", `${CU}?q=3201`);
+      expect("a person's NIK is not found by its first digits (no digit-by-digit guessing)", res.status === 200 && res.body.meta.total === 0, res.body);
+      res = await admin.call("GET", `${CU}?q=3201011508900001`);
+      expect("…only whole, and then still masked", res.status === 200 && res.body.meta.total === 1 && res.body.data[0].tax_id === "3201********0001", res.body);
+      res = await admin.call("GET", `${CU}/lookup?q=01.302.442.7`);
+      expect("a company's NPWP is found by prefix as typed", res.status === 200 && res.body.data.some((c) => c.id === maju.id), res.body);
+      res = await clerk.call("POST", CU, { name: "Sari", party_type: "individual", tax_id_kind: "npwp", tax_id: "3201015508900002", is_pkp: true });
+      expect("an individual's NPWP (her NIK) comes back masked to the clerk", res.status === 201 && res.body.data.customer.tax_id === "3201********0002" && res.body.data.customer.tax_id_masked === true, res.body);
+      res = await admin.call("POST", CU, { name: "PT Salah", party_type: "company", tax_id_kind: "npwp", tax_id: "0000000000000000" });
+      expect("the all-zero Coretax placeholder is no NPWP → 422", res.status === 422 && res.body.errors.some((e) => e.field === "tax_id"), res.body);
+      res = await admin.call("POST", CU, { name: "PT NIK", party_type: "company", tax_id_kind: "npwp", tax_id: "3201011508900001" });
+      expect("an NPWP that is a NIK for a company → 422", res.status === 422 && res.body.errors.some((e) => e.field === "tax_id"), res.body);
+      res = await admin.call("POST", CU, { name: "PT Pindah", party_type: "company", tax_id_kind: "npwp", tax_id: "0015555555555000" });
+      const pindah = res.body?.data?.customer;
+      expect("PT Pindah", res.status === 201, res.body);
+      expect("…its head office with the default NITKU", (await admin.call("POST", `${CU}/${pindah.id}/addresses`, { ...address, label: "Pusat", line: "Jl. Pindah 1", nitku: "0015555555555000000000", is_default_billing: true })).status === 200);
+      let shown = (await admin.call("GET", `${CU}/${pindah.id}`)).body?.data?.customer;
+      res = await admin.call("PUT", `${CU}/${pindah.id}`, { ...asInput(shown), tax_id: "0016666666666000" });
+      expect("a changed NPWP moves the head office's default NITKU with it, in one transaction",
+        res.status === 200 && q(`SELECT nitku FROM cust_addresses WHERE customer_id = ${pindah.id}`) === "0016666666666000000000", res.body);
+      expect("…a branch with its own NITKU of the new NPWP", (await admin.call("POST", `${CU}/${pindah.id}/addresses`, { ...address, label: "Cabang Bogor", line: "Jl. Pindah 2", nitku: "0016666666666000000001", is_default_billing: false })).status === 200);
+      shown = (await admin.call("GET", `${CU}/${pindah.id}`)).body?.data?.customer;
+      res = await admin.call("PUT", `${CU}/${pindah.id}`, { ...asInput(shown), tax_id: "0017777777777000" });
+      expect("…then another NPWP is refused, naming the branch whose NITKU would no longer fit (Coretax rejects it)",
+        res.status === 422 && res.body.errors.some((e) => e.field === "tax_id" && /Cabang Bogor/.test(e.message)) &&
+        q(`SELECT tax_id FROM cust_customers WHERE id = ${pindah.id}`) === "0016666666666000", res.body);
+      res = await admin.call("POST", CU, { name: "Kim", party_type: "individual", is_foreign: true, country: "KR", tax_id_kind: "other", tax_id: "kitas 2c11ab" });
+      const kim = res.body?.data?.customer;
+      expect("Coretax's \"Other\" ID: saved in capitals, masked", res.status === 201 && kim.tax_id_kind === "other" && kim.tax_id_masked === true &&
+        q(`SELECT tax_id FROM cust_customers WHERE id = ${kim.id}`) === "KITAS2C11AB", res.body);
+      res = await admin.call("POST", `${CU}/${kim.id}/addresses`, { ...address, country: "KR", label: "Seoul", line: "Gangnam-gu 1", nitku: "0016666666666000000002", is_default_billing: true });
+      expect("…which takes no NITKU (only an NPWP or NIK — Coretax's TIN — does) → 422", res.status === 422 && res.body.errors.some((e) => e.field === "nitku"), res.body);
+
       res = await admin.call("POST", SU, { name: "CV Sumber Rejeki", party_type: "company", tax_id_kind: "npwp", tax_id: "0013024427092000" });
       const sup = res.body?.data?.supplier;
       expect("a supplier gets PMS-00001 from its own counter; a customer's NPWP is no duplicate there", res.status === 201 && sup.code === "PMS-00001", res.body);
@@ -1632,6 +1667,10 @@ async function documents() {
       expect("the administrator reveals it whole, recorded", res.status === 200 && res.body.data.bank_accounts[0]?.account_number === "1234567890" &&
         q(`SELECT COUNT(*) FROM audit_log WHERE module = 'suppliers' AND kind = 'access'`) === "1", res.body);
 
+      res = await admin.call("POST", SU, { name: "Bu Ani", party_type: "individual", tax_id_kind: "nik", tax_id: "3201015508900002" });
+      expect("a supplier's NIK…", res.status === 201, res.body);
+      res = await admin.call("GET", `${SU}?q=3201`);
+      expect("…is not found by its first digits either", res.status === 200 && res.body.meta.total === 0, res.body);
       expect("company 1's customer is not found from B (404)", (await admin.call("GET", `${CU}/${maju.id}`, undefined, at(String(b)))).status === 404);
       expect("…nor its supplier", (await admin.call("GET", `${SU}/${sup.id}`, undefined, at(String(b)))).status === 404);
       res = await admin.call("POST", CU, { name: "Toko Maju", party_type: "company", tax_id_kind: "npwp", tax_id: "0013024427092000" }, at(String(b)));

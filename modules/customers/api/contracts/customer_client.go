@@ -16,6 +16,9 @@ var (
 	ErrInactive = errors.New("customers: inactive")
 	// ErrOnHold is a customer someone put on hold, with a reason (Customer.HoldReason).
 	ErrOnHold = errors.New("customers: on hold")
+	// ErrInconsistent is a customer whose tax data a document may not print as it stands: an
+	// address's NITKU that is not the customer's NPWP. Snapshot refuses with it; fix the customer.
+	ErrInconsistent = errors.New("customers: tax data inconsistent")
 )
 
 // Customer is a customer as another module sees it.
@@ -39,7 +42,7 @@ type Snapshot struct {
 	PartyType    string
 	IsForeign    bool
 	Country      string
-	TaxIDKind    string // npwp | nik | passport | none
+	TaxIDKind    string // npwp | nik | passport | other | none
 	TaxID        string // whole, unmasked: it goes on the tax invoice
 	IsPKP        bool
 	VATCollector string // none | government | other

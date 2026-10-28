@@ -1,5 +1,5 @@
 export type PartyType = "company" | "individual" | "government";
-export type TaxIDKind = "npwp" | "nik" | "passport" | "none";
+export type TaxIDKind = "npwp" | "nik" | "passport" | "other" | "none";
 export type SupplierStatus = "" | "active" | "on_hold" | "inactive";
 
 export interface Supplier {
@@ -11,7 +11,7 @@ export interface Supplier {
   is_foreign: boolean;
   country: string;
   tax_id_kind: TaxIDKind;
-  /** NIK and passport numbers come masked (tax_id_masked); the whole one through reveal. */
+  /** A person's ID — NIK, passport, other document, an NPWP that is a NIK — comes masked (tax_id_masked); the whole one through reveal. */
   tax_id: string;
   tax_id_masked: boolean;
   is_pkp: boolean;
@@ -144,6 +144,7 @@ export const TAX_ID_LABEL: Record<TaxIDKind, string> = {
   npwp: "NPWP",
   nik: "NIK",
   passport: "Paspor",
+  other: "Dokumen lain (mis. KITAS)",
   none: "Tanpa identitas pajak",
 };
 

@@ -84,11 +84,11 @@ func duplicate(err error) error {
 }
 
 func (r *Repository) List(ctx context.Context, company int64, f application.ListFilter) ([]domain.Supplier, int64, error) {
-	rows, err := r.q(ctx).ListSuppliers(ctx, sqlc.ListSuppliersParams{CompanyID: company, Status: f.Status, Search: f.Search, Limit: int32(f.Limit), Offset: int32(f.Offset)})
+	rows, err := r.q(ctx).ListSuppliers(ctx, sqlc.ListSuppliersParams{CompanyID: company, Status: f.Status, Search: f.Search, TaxSearch: f.TaxSearch, Limit: int32(f.Limit), Offset: int32(f.Offset)})
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := r.q(ctx).CountSuppliers(ctx, sqlc.CountSuppliersParams{CompanyID: company, Status: f.Status, Search: f.Search})
+	total, err := r.q(ctx).CountSuppliers(ctx, sqlc.CountSuppliersParams{CompanyID: company, Status: f.Status, Search: f.Search, TaxSearch: f.TaxSearch})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -96,8 +96,8 @@ func (r *Repository) List(ctx context.Context, company int64, f application.List
 	return out, total, err
 }
 
-func (r *Repository) Search(ctx context.Context, company int64, q string, limit int) ([]domain.Supplier, error) {
-	rows, err := r.q(ctx).SearchActiveSuppliers(ctx, sqlc.SearchActiveSuppliersParams{CompanyID: company, Search: q, Limit: int32(limit)})
+func (r *Repository) Search(ctx context.Context, company int64, q, taxQ string, limit int) ([]domain.Supplier, error) {
+	rows, err := r.q(ctx).SearchActiveSuppliers(ctx, sqlc.SearchActiveSuppliersParams{CompanyID: company, Search: q, TaxSearch: taxQ, Limit: int32(limit)})
 	if err != nil {
 		return nil, err
 	}

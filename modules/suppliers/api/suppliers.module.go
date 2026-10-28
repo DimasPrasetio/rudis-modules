@@ -7,6 +7,7 @@ package suppliers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"__GO_MODULE__/internal/kernel"
@@ -50,6 +51,8 @@ func contractErr(err error) error {
 		return contracts.ErrInactive
 	case errors.Is(err, application.ErrOnHold):
 		return contracts.ErrOnHold
+	case errors.Is(err, application.ErrInconsistent):
+		return fmt.Errorf("%w: %w", contracts.ErrInconsistent, err)
 	}
 	return err
 }

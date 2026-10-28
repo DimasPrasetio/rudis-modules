@@ -14,6 +14,9 @@ var (
 	ErrInactive = errors.New("suppliers: inactive")
 	// ErrOnHold is a supplier someone put on hold, with a reason (Supplier.HoldReason).
 	ErrOnHold = errors.New("suppliers: on hold")
+	// ErrInconsistent is a supplier whose tax data a document may not print as it stands: an
+	// address's NITKU that is not the supplier's NPWP. Snapshot refuses with it; fix the supplier.
+	ErrInconsistent = errors.New("suppliers: tax data inconsistent")
 )
 
 // Supplier is a supplier as another module sees it.
@@ -23,7 +26,7 @@ type Supplier struct {
 	Name        string
 	PartyType   string // company | individual | government
 	IsForeign   bool
-	TaxIDKind   string // npwp | nik | passport | none — a withholding module decides rates from it
+	TaxIDKind   string // npwp | nik | passport | other | none — a withholding module decides rates from it
 	IsPKP       bool   // input VAT is creditable only from a PKP
 	PaymentDays *int   // nil: cash on delivery
 	OnHold      bool
@@ -72,6 +75,7 @@ type SupplierClient interface {
 	// 0 for the default billing address (or the first active one).
 	Snapshot(ctx context.Context, id, addressID int64) (Snapshot, error)
 	// DefaultBankAccount is the account a payment goes to: the active default, else the first
-	// active one; ErrNotFound when there is none. A payment module records reading it.
+	// active one; ErrNotFound when there is none, ErrInactive or ErrOnHold for a supplier no
+	// payment may go to now. A payment module records reading it.
 	DefaultBankAccount(ctx context.Context, id int64) (BankAccount, error)
 }

@@ -115,10 +115,13 @@ func (c *Supplier) prepareTaxID(v *validator.Validator) (warnings []string) {
 	case taxid.NPWP:
 		n, err := taxid.NormalizeNPWP(c.TaxID)
 		if err != nil {
-			v.Check(false, "tax_id", "NPWP harus 16 digit (NPWP lama 15 digit diubah otomatis)")
+			v.Check(false, "tax_id", "NPWP harus 16 digit (NPWP lama 15 digit diubah otomatis); NPWP yang tidak diawali 0 harus berupa NIK yang benar")
 			return nil
 		}
 		c.TaxID = n
+		if taxid.IsNIKAsNPWP(n) {
+			v.Check(c.PartyType == Individual && !c.IsForeign, "tax_id", "NPWP yang tidak diawali 0 adalah NIK — hanya untuk perorangan dalam negeri")
+		}
 		if taxid.SuspectNPWP(n) {
 			warnings = append(warnings, "Digit pemeriksa NPWP tidak cocok — periksa kembali nomornya")
 		}
@@ -126,7 +129,7 @@ func (c *Supplier) prepareTaxID(v *validator.Validator) (warnings []string) {
 		v.Check(c.PartyType == Individual && !c.IsForeign, "tax_id_kind", "NIK hanya untuk perorangan dalam negeri")
 		n, err := taxid.CheckNIK(c.TaxID)
 		if err != nil {
-			v.Check(false, "tax_id", "NIK harus 16 digit dengan tanggal lahir yang benar")
+			v.Check(false, "tax_id", "NIK harus 16 digit dengan kode wilayah dan tanggal lahir yang benar")
 			return nil
 		}
 		c.TaxID = n
@@ -138,24 +141,57 @@ func (c *Supplier) prepareTaxID(v *validator.Validator) (warnings []string) {
 			return nil
 		}
 		c.TaxID = n
+	case taxid.Other:
+		n, err := taxid.CheckOther(c.TaxID)
+		if err != nil {
+			v.Check(false, "tax_id", "nomor dokumen 3–30 huruf, angka, atau . / -")
+			return nil
+		}
+		c.TaxID = n
 	case taxid.None:
 		c.TaxID = ""
 		v.Check(!c.IsPKP, "is_pkp", "PKP harus punya NPWP atau NIK")
 	default:
-		v.Check(false, "tax_id_kind", "pilih NPWP, NIK, paspor, atau tanpa identitas")
+		v.Check(false, "tax_id_kind", "pilih NPWP, NIK, paspor, dokumen lain, atau tanpa identitas")
 	}
-	if c.TaxIDKind == taxid.Passport {
+	if c.TaxIDKind == taxid.Passport || c.TaxIDKind == taxid.Other {
 		v.Check(!c.IsPKP, "is_pkp", "PKP harus punya NPWP atau NIK")
 	}
 	return warnings
 }
 
-// TaxIDForNITKU is the NPWP a NITKU of this supplier must start with, or "" when it has none.
+// TaxIDForNITKU is the NPWP a NITKU of this supplier must start with, or "" when it has none:
+// only an NPWP or a NIK used as one (Coretax's TIN) has places of business with a NITKU.
 func (c Supplier) TaxIDForNITKU() string {
-	if c.TaxIDKind == taxid.NPWP || c.TaxIDKind == taxid.NIK {
+	if c.TaxIDKind.TakesNITKU() {
 		return c.TaxID
 	}
 	return ""
+}
+
+// TaxIDIsPersonal reports whether the supplier's tax ID names a natural person — a NIK, a passport,
+// another document, an NPWP that is a NIK, or any ID of an individual — personal data (UU 27/2022)
+// that lists and responses show masked.
+func (c Supplier) TaxIDIsPersonal() bool {
+	return c.TaxID != "" && (c.PartyType == Individual || taxid.IdentifiesPerson(c.TaxIDKind, c.TaxID))
+}
+
+// MovedNITKU is the NITKU an address keeps when its supplier's NPWP changes from oldNPWP to newNPWP
+// ("" when it takes no NITKU now): the head office's default (NPWP + 000000) follows the NPWP; any
+// other NITKU must already belong to newNPWP. ok is false when it belongs to neither.
+func MovedNITKU(nitku, oldNPWP, newNPWP string) (moved string, ok bool) {
+	switch {
+	case nitku == "":
+		return "", true
+	case newNPWP != "" && taxid.NITKUOf(nitku, newNPWP):
+		return nitku, true
+	case oldNPWP != "" && nitku == taxid.DefaultNITKU(oldNPWP):
+		if newNPWP == "" {
+			return "", true
+		}
+		return taxid.DefaultNITKU(newNPWP), true
+	}
+	return nitku, false
 }
 
 // Address is a billing or shipping address of a supplier.

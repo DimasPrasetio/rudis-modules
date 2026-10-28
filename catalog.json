@@ -145,10 +145,10 @@
     },
     {
       "id": "customers",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "kind": "fullstack",
       "title": "Customers",
-      "summary": "A company's customers: code (generated or typed), party type, tax identity as Coretax needs it (NPWP 16, NIK, passport, PKP, VAT collector), billing and shipping addresses with NITKU, contacts, payment days, credit limit, on hold with a reason — deactivated, never deleted. NIK and passport masked, whole only with an access record. Offers CustomerClient (Get, Search, Usable inside a posting's d.Tx, Snapshot for documents).",
+      "summary": "A company's customers: code (generated or typed), party type, tax identity as Coretax needs it (NPWP 16, NIK, passport, PKP, VAT collector), billing and shipping addresses with NITKU, contacts, payment days, credit limit, on hold with a reason — deactivated, never deleted. A person's ID masked (an individual's NPWP too) and matched only whole in search; whole only with an access record. Offers CustomerClient (Get, Search, Usable inside a posting's d.Tx, Snapshot for documents).",
       "when_to_use": [
         "The app sells to known parties: sales orders, invoices, receivables, deliveries, a POS with member customers."
       ],
@@ -604,10 +604,10 @@
     },
     {
       "id": "suppliers",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "kind": "fullstack",
       "title": "Suppliers",
-      "summary": "A company's suppliers: code (generated or typed), party type, tax identity as Coretax needs it (NPWP 16, NIK, passport, PKP), addresses with NITKU, bank accounts (changed only with suppliers.sensitive, every change a security record, a warning when the holder is someone else), contacts, payment days, on hold with a reason — deactivated, never deleted. NIK, passport, and account numbers masked, whole only with an access record. Offers SupplierClient (Get, Search, Usable inside a posting's d.Tx, Snapshot, DefaultBankAccount).",
+      "summary": "A company's suppliers: code (generated or typed), party type, tax identity as Coretax needs it (NPWP 16, NIK, passport, PKP), addresses with NITKU, bank accounts (changed only with suppliers.sensitive, every change a security record, a warning when the holder is someone else), contacts, payment days, on hold with a reason — deactivated, never deleted. A person's ID (an individual's NPWP too) and account numbers masked, whole only with an access record. Offers SupplierClient (Get, Search, Usable inside a posting's d.Tx, Snapshot, DefaultBankAccount).",
       "when_to_use": [
         "The app buys from known parties: purchase orders, bills, payables, payments, goods receipts."
       ],
@@ -654,10 +654,10 @@
     },
     {
       "id": "taxid",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "kind": "gokit",
       "title": "Tax IDs (Go kit)",
-      "summary": "Indonesian tax identities: the 16-digit NPWP (old 15-digit ones normalized with a leading 0), the NIK as an individual's NPWP (length, region, birth date), the 22-digit NITKU of a place of business, passport numbers, an unofficial NPWP check digit as a warning, and masking for display. Formats only — registration is DJP's to confirm.",
+      "summary": "Indonesian tax identities: the 16-digit NPWP (old 15-digit ones normalized with a leading 0; one not starting with 0 checked as the NIK it is; the all-zero placeholder refused), the NIK (length, the 38 province codes, region, birth date), the 22-digit NITKU and the head office's default, passport and Coretax 'Other' document numbers, which IDs name a person, an unofficial NPWP check digit as a warning, and masking for display. Formats only — registration is DJP's to confirm.",
       "when_to_use": [
         "A module stores or checks an NPWP, NIK, NITKU, or passport number — customers, suppliers, employees, the company profile."
       ],

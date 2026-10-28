@@ -3,7 +3,9 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
+	"strings"
 
 	"__GO_MODULE__/internal/kernel"
 	"__GO_MODULE__/internal/modules/suppliers/domain"
@@ -252,8 +254,14 @@ func (s *Service) SetBankAccountActive(ctx context.Context, supplierID, id int64
 // active one — whole, with an access record; ErrNotFound when there is none.
 func (s *Service) DefaultBankAccount(ctx context.Context, supplierID int64) (domain.BankAccount, error) {
 	co := company(ctx)
-	if _, err := s.repo.Get(ctx, co, supplierID); err != nil {
+	sup, err := s.repo.Get(ctx, co, supplierID)
+	switch {
+	case err != nil:
 		return domain.BankAccount{}, err
+	case !sup.IsActive:
+		return domain.BankAccount{}, ErrInactive // no payment goes to a deactivated supplier
+	case sup.OnHold:
+		return domain.BankAccount{}, ErrOnHold
 	}
 	banks, err := s.repo.BankAccounts(ctx, co, supplierID)
 	if err != nil {
@@ -286,7 +294,7 @@ func (s *Service) Get(ctx context.Context, id int64) (domain.Supplier, error) {
 // Search finds up to limit (1–50) active suppliers whose code, name, or tax ID matches q.
 func (s *Service) Search(ctx context.Context, q string, limit int) ([]domain.Supplier, error) {
 	limit = max(1, min(limit, 50))
-	rows, err := s.repo.Search(ctx, company(ctx), q, limit)
+	rows, err := s.repo.Search(ctx, company(ctx), strings.TrimSpace(q), taxSearch(q), limit)
 	for i := range rows {
 		rows[i] = Masked(rows[i])
 	}
@@ -324,10 +332,13 @@ func (s *Service) Snapshot(ctx context.Context, id, addressID int64) (domain.Sup
 	}
 	if addressID != 0 {
 		a, err := s.repo.Address(ctx, co, id, addressID)
+		if err == nil && !a.IsActive {
+			err = ErrNotFound // an inactive address is not one a new document may print
+		}
 		if err != nil {
 			return c, domain.Address{}, errors.Join(err, errors.New("suppliers: address "+strconv.FormatInt(addressID, 10)))
 		}
-		return c, a, nil
+		return c, a, consistent(c, a)
 	}
 	addrs, err := s.repo.Addresses(ctx, co, id)
 	if err != nil {
@@ -339,11 +350,22 @@ func (s *Service) Snapshot(ctx context.Context, id, addressID int64) (domain.Sup
 			continue
 		}
 		if a.IsDefaultBilling {
-			return c, a, nil
+			return c, a, consistent(c, a)
 		}
 		if pick.ID == 0 {
 			pick = a
 		}
 	}
-	return c, pick, nil
+	return c, pick, consistent(c, pick)
+}
+
+// ErrInconsistent is a supplier whose tax data a document cannot print as it stands: an address's
+// NITKU that does not belong to the supplier's NPWP (saved before the NPWP changed).
+var ErrInconsistent = errors.New("suppliers: tax data inconsistent")
+
+func consistent(c domain.Supplier, a domain.Address) error {
+	if a.NITKU != "" && !taxid.NITKUOf(a.NITKU, c.TaxIDForNITKU()) {
+		return fmt.Errorf("%w: address %d's NITKU is not the supplier's NPWP", ErrInconsistent, a.ID)
+	}
+	return nil
 }
