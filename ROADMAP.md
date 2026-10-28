@@ -65,6 +65,106 @@ dalam satu kit tanpa tabel).
 Jangan memecah lebih halus dari *fitur yang wajar dipakai terpisah*: setiap pecahan menambah port
 dan adaptor yang harus dirakit di setiap proyek.
 
+## Syarat wajib setiap modul — pelajaran audit 28 Oktober 2026
+
+Audit 21 modul pertama (fungsional, UI/UX, arsitektur) menemukan kesalahan yang mudah terulang.
+Setiap modul di roadmap **wajib** memenuhi daftar ini. Rencana modul di `docs/plans/` memuat
+bagian "Syarat wajib" yang menjawab setiap butir (✓ atau alasan tidak berlaku), dan tinjauan
+rilis memeriksanya.
+
+### A. Data milik perusahaan dan data pribadi
+
+1. **Scoped sejak awal.** Modul yang menyimpan data operasional memakai `"scoped": true`;
+   tidak ada tabel atau daftar global yang bisa dibaca semua perusahaan. *(audit: mailer,
+   audit-log)*
+2. **Catatan tingkat instalasi disimpan sebagai perusahaan 0** dan hanya terlihat oleh izin
+   tingkat instalasi yang terpisah — tidak pernah dititipkan ke perusahaan 1. *(audit-log)*
+3. **Identitas orang tidak bisa ditebak lewat pencarian.** NIK, paspor, NPWP orang pribadi,
+   nomor rekening, nomor BPJS: hanya cocok persis, tidak pernah `LIKE 'xxx%'`. *(customers,
+   suppliers)*
+4. **Samarkan berdasarkan "apakah ini orang"**, bukan berdasarkan jenis kolom; buka hanya
+   dengan izin `*.sensitive` dan selalu diaudit.
+5. **Akses berkas mengikuti modul pemiliknya.** Berkas milik modul lain tidak bisa diunduh
+   lewat izin umum. *(files)*
+6. **`LIKE` selalu di-escape** (`%`, `_`).
+
+### B. Keamanan
+
+7. **Pembatas laju menghitung kegagalan, bukan keberhasilan**; gunakan penundaan bertahap,
+   bukan kunci keras yang bisa dipakai penyerang untuk mengunci korban. *(auth)*
+8. **Perubahan sensitif pada akun sendiri** (email, sandi, rekening, peran) lewat jalur
+   mandiri dengan autentikasi ulang, tidak lewat endpoint admin. *(users)*
+9. **Pemberian hak dan perubahan peran adalah kejadian keamanan**: diaudit sebagai
+   `security`, di dalam transaksi yang sama. *(rbac)*
+10. **Perubahan rekening bank, alamat tagih, atau data pembayaran** butuh persetujuan orang
+    kedua atau masa tunggu (anti-fraud).
+
+### C. Ketepatan
+
+11. **Baca-ubah-tulis dalam satu transaksi terkunci** (`SELECT … FOR UPDATE` lalu tulis,
+    audit di transaksi yang sama). *(users, numbering)*
+12. **Pembaruan sebagian tidak menimpa field yang tidak dikirim** (zona waktu, logo, NITKU).
+    *(settings)*
+13. **Efek samping keluar sistem idempoten** (email, webhook, pembayaran, kurir): pengiriman
+    ulang tidak menggandakan; error setelah pihak lain menerima diperlakukan sebagai sukses;
+    salah konfigurasi dicoba ulang dan diperingatkan, bukan "gagal permanen". *(mailer)*
+14. **Byte di disk mengikuti transaksi**: berkas yang barisnya batal disapu. *(files)*
+15. **Data turunan diperiksa ulang saat sumbernya berubah** (NITKU saat NPWP berubah).
+    *(customers, suppliers)*
+
+### D. Regulasi Indonesia
+
+16. Aturan pajak, BPJS, upah, kode wilayah, hari libur **disimpan sebagai data bertanggal
+    berlaku** di kit (`idtax`, `idpayroll`, `taxid`), dicek ke **teks resmi** (pajak.go.id,
+    peraturan.bpk.go.id, JDIH) dan diberi sumber di README.
+17. Validasi identitas lewat kit `taxid` (NPWP 16 digit, NIK-sebagai-NPWP, NITKU 22 digit,
+    jenis "Other ID"), tidak ditulis ulang di modul.
+
+### E. Arsitektur
+
+18. **Data master menerbitkan event siklus hidup** (`<id>.<benda>.created/changed/deactivated`)
+    agar modul lain bisa bereaksi tanpa polling. *(audit: hanya satu modul yang menerbitkan event)*
+19. **Tawarkan kontrak yang akan dibutuhkan modul lain** sejak versi pertama (mis. `RoleHolders`
+    di rbac untuk approvals).
+20. Kebutuhan lintas modul tetap lewat port — dan bila satu modul berubah status (penempatan
+    dicabut), modul terkait diberi tahu lewat event, bukan dibiarkan basi. *(organization ↔ rbac)*
+
+### F. UI/UX — riset dulu, bangun kemudian
+
+Setiap modul yang punya layar **wajib melewati gerbang riset desain** sebelum kode UI ditulis:
+
+21. **Riset** bagaimana layar sejenis dirancang dengan baik saat ini (produk acuan + pedoman:
+    WCAG 2.2 AA, Carbon, NN/g, GOV.UK Design System, Baymard; untuk sentuh: Material/HIG) dan
+    tulis **brief desain bersumber** di rencana modul (`docs/plans/PLAN-<NAME>.md` › Desain).
+22. **Pakai kit, jangan buat ulang** (`kits-first`): bila komponen generik belum ada, tambahkan
+    dulu ke kit + `ui-gallery` dalam perubahan sendiri.
+23. **Daftar periksa aksesibilitas** (dibuktikan di bagian Hasil rencana):
+    - fokus keyboard terlihat ≥3:1 pada setiap kontrol (WCAG 1.4.11, 2.4.7) dan tidak
+      tertutup header/footer lengket (2.4.11);
+    - judul halaman lewat `PageHeader`, satu `<h1>`, skip link dari app-shell (2.4.1, 2.4.2);
+    - nama aksesibel = label; tidak ada elemen interaktif bersarang;
+    - `autocomplete` pada data pribadi (1.3.5); OTP/sandi bisa ditempel (3.3.8);
+    - error: ringkasan di atas + pesan di samping field + ikon, divalidasi saat kirim
+      (GOV.UK/NN/g); penjaga perubahan belum disimpan;
+    - status diumumkan tanpa memindah fokus (4.1.3);
+    - target ≥24 px (2.5.8); **≥44–48 px untuk modul sentuh/kiosk** (POS, absensi, buku tamu,
+      antrean, KDS) memakai density sentuh;
+    - `prefers-reduced-motion` dihormati.
+24. **Format Indonesia lewat kit**: uang dengan `MoneyInput` (titik ribuan, koma desimal),
+    tanggal `dd/mm/yyyy` dan nama bulan Indonesia, telepon +62, NPWP/NIK — tidak pernah
+    `Number()` atau `parseFloat` pada uang.
+25. **Tabel**: identitas baris adalah tautan sungguhan (bisa dibuka di tab baru), state
+    kosong/memuat/error tidak menghilangkan header, tata letak HP tidak sekadar geser
+    horizontal.
+26. **Verifikasi visual wajib sebelum rilis**: screenshot desktop (≥1280 px) dan HP (375 px),
+    navigasi keyboard penuh, konsol bebas galat — dilampirkan di bagian Hasil rencana.
+
+### G. Pengujian
+
+27. Setiap perbaikan dan setiap aturan di atas yang berlaku punya **cek testbed**; modul scoped
+    wajib punya cek isolasi dua perusahaan.
+28. Testbed penuh dijalankan sebelum rilis; hasilnya dicatat di STATUS.md › Last verified.
+
 Fakta regulasi di kolom Catatan diberi tanda **[V]** terverifikasi di sumber resmi, **[S]** dari
 sumber sekunder, **[U]** belum terverifikasi. Semua wajib dicek ulang ke teks resmi saat rencana
 modulnya ditulis.
@@ -73,33 +173,34 @@ modulnya ditulis.
 
 | Status | Modul | Jenis | Menyediakan |
 |---|---|---|---|
-| ✅ 0.7.0 | `auth` | fullstack | login email + sandi, sesi server |
-| ✅ 0.7.0 | `users` | fullstack | kontrak `UserClient` |
+| ✅ 0.8.0 | `auth` | fullstack | login email + sandi, sesi server |
+| ✅ 0.8.0 | `users` | fullstack | kontrak `UserClient` |
 | ✅ 0.6.0 | `rbac` | fullstack | peran & izin per perusahaan/cabang |
 | ✅ 0.1.0 | `organization` | fullstack | `OrganizationClient`; event `organization.company.created` |
-| ✅ 0.3.0 | `settings` | fullstack | `SettingsClient` (profil perusahaan, NPWP, logo) |
-| ✅ 0.2.0 | `audit-log` | fullstack | jejak audit `d.Audit` |
-| ✅ 0.2.0 | `files` | fullstack | `FileClient` (unggah ke `DATA_DIR`) |
-| ✅ 0.2.0 | `mailer` | fullstack | `MailClient` (antrean email) |
+| ✅ 0.3.1 | `settings` | fullstack | `SettingsClient` (profil perusahaan, NPWP, logo) |
+| ✅ 0.3.0 | `audit-log` | fullstack | jejak audit `d.Audit` |
+| ✅ 0.3.0 | `files` | fullstack | `FileClient` (unggah ke `DATA_DIR`) |
+| ✅ 0.3.0 | `mailer` | fullstack | `MailClient` (antrean email per perusahaan) |
 | ✅ 0.1.0 | `numbering` | fullstack | `NumberingClient` (nomor dokumen) |
 | ✅ 0.1.0 | `period` | fullstack | `PeriodClient` (tutup buku per area) |
-| ✅ 0.1.0 | `customers` | fullstack | `CustomerClient` (identitas pajak Coretax) |
-| ✅ 0.1.0 | `suppliers` | fullstack | `SupplierClient` |
+| ✅ 0.2.0 | `customers` | fullstack | `CustomerClient` (identitas pajak Coretax) |
+| ✅ 0.2.0 | `suppliers` | fullstack | `SupplierClient` |
 | ✅ 0.1.0 | `money` | gokit | Rupiah, kuantitas, tarif presisi |
 | ✅ 0.1.0 | `docstate` | gokit | draft → posted → cancelled → amended |
-| ✅ 0.1.0 | `taxid` | gokit | NPWP 16 digit, NIK |
-| ✅ 0.5.0 | `app-shell` | web | bingkai halaman, sidebar dari nav modul |
-| ✅ 0.4.0 | `ui-core` | ui | primitif & layout Bingkai Navy |
-| ✅ 0.2.0 | `ui-data` | ui | DataTable |
-| ✅ 0.2.0 | `ui-forms` | ui | field, pencarian, alamat |
+| ✅ 0.2.0 | `taxid` | gokit | NPWP 16 digit, NIK |
+| ✅ 0.6.0 | `app-shell` | web | bingkai halaman, sidebar dari nav modul |
+| ✅ 0.5.0 | `ui-core` | ui | primitif & layout Bingkai Navy |
+| ✅ 0.2.1 | `ui-data` | ui | DataTable |
+| ✅ 0.3.0 | `ui-forms` | ui | field, pencarian, alamat, `MoneyInput` |
 | ✅ 0.1.0 | `ui-feedback` | ui | toast, dialog konfirmasi |
-| ✅ 0.1.1 | `ui-gallery` | web | galeri komponen kit |
-| ✅ 0.1.1 | `bingkai-navy` | preset | tema back-office |
+| ✅ 0.1.2 | `ui-gallery` | web | galeri komponen kit |
+| ✅ 0.1.2 | `bingkai-navy` | preset | tema back-office |
 
 ## Ringkasan 88 modul baru
 
 | Gelombang | Fokus | Jumlah | Selesai |
 |---|---|---|---|
+| 0 | Perbaikan fondasi (audit) — bukan modul baru | 20 butir | 10 |
 | 1 | Kit dasar | 10 | 0 |
 | 2 | Platform lintas bidang | 14 | 0 |
 | 3 | Layanan, kantor & publik | 11 | 0 |
@@ -115,6 +216,37 @@ gelombang yang sama atau sebelumnya (atau modul yang sudah ada). Gelombang 3 sen
 modul layanan memakai paling sedikit port dan paling cepat berguna untuk aplikasi yang jenisnya
 belum diketahui. Gelombang 8 berisi modul domain sempit dan pelengkap yang bernilai tinggi bila
 dibutuhkan, tetapi jarang menjadi kebutuhan pertama.
+
+## Gelombang 0 — Perbaikan fondasi (audit 28 Oktober 2026)
+
+Audit fungsional, UI/UX, dan arsitektur atas modul yang sudah ada sebelum roadmap dimulai.
+**P0** sudah diperbaiki; **P1** dikerjakan paling lambat sebelum gelombang yang membutuhkannya.
+Akar masalahnya kini menjadi [syarat wajib](#syarat-wajib-setiap-modul--pelajaran-audit-28-oktober-2026)
+untuk setiap modul berikutnya. Kolom *Syarat wajib* menunjuk kelompok dan nomor butirnya
+(mis. `B7` = kelompok B, butir 7).
+
+| # | Status | Perbaikan | Modul (versi) | Syarat wajib |
+|---|---|---|---|---|
+| 0.1 | ✅ | Catatan tanpa perusahaan disimpan sebagai perusahaan 0, hanya untuk izin `audit-log.system`; disalin ke perusahaan tempat orangnya ditempatkan; lingkup baca per cabang | `audit-log` 0.3.0 | A1, A2 |
+| 0.2 | ✅ | Outbox email per perusahaan (`company_id`), email tingkat instalasi untuk `mailer.system`, nama pengirim per perusahaan lewat port opsional `SenderIdentity` | `mailer` 0.3.0 | A1, A2 |
+| 0.3 | ✅ | Pencarian identitas orang hanya cocok utuh (tanpa oracle prefix); semua identitas orang disamarkan; 409 duplikat hanya untuk penulis | `customers` 0.2.0, `suppliers` 0.2.0 | A3, A4 |
+| 0.4 | ✅ | Pembatas login hanya menghitung kegagalan, penundaan bertahap + 429 `Retry-After`, LRU O(1) per jenis kunci; idle timeout `SESSION_IDLE_TIMEOUT` (60 menit); sesi lama dicabut saat login ulang; akun nonaktif tidak lagi menjadi oracle sandi | `auth` 0.8.0 | B7 |
+| 0.5 | ✅ | Berkas milik modul lain tidak terjangkau izin umum `files.read`; sapu byte yatim harian; ekstensi mengikuti tipe terdeteksi; cek paket Office | `files` 0.3.0 | A5, C14 |
+| 0.6 | ✅ | `Update` pengguna satu transaksi terkunci; email/sandi akun sendiri tidak lewat endpoint admin; `LIKE` di-escape | `users` 0.8.0 | B8, C11 |
+| 0.7 | ✅ | Zona waktu tidak tertimpa saat simpan profil, audit di dalam transaksi; email tidak terkirim ganda saat QUIT gagal, salah kredensial SMTP dicoba ulang, Message-ID stabil | `settings` 0.3.1, `mailer` 0.3.0 | C12, C13 |
+| 0.8 | ✅ | NPWP tak berawalan 0 = NIK dan diperiksa sebagai NIK, nilai serba-nol ditolak, kode provinsi NIK, jenis "Other ID", `DefaultNITKU`; NITKU default ikut pindah saat NPWP berubah | `taxid` 0.2.0, `customers` 0.2.0, `suppliers` 0.2.0 | C15, D17 |
+| 0.9 | ✅ | `MoneyInput` (titik ribuan, koma desimal, tanpa floating point), dipakai di batas kredit | `ui-forms` 0.3.0, `customers` 0.2.0 | F24 |
+| 0.10 | ✅ | Fokus keyboard ≥3:1 di semua kontrol (cincin `--ring` 4,3–6,8:1), opsi pilihan terlihat saat fokus, tanpa tombol bersarang, FileDropzone, `autocomplete`, skip link, judul per halaman, `aria-current`, reduced-motion | `ui-core` 0.5.0, `ui-forms` 0.3.0, `ui-data` 0.2.1, `app-shell` 0.6.0, `ui-gallery` 0.1.2, `bingkai-navy` 0.1.2 | F23 |
+| 0.11 | ⬜ P1 — sebelum `approvals` (#13) | Peran per perusahaan atau templat peran; audit pemberian admin saat start; peran dicatat `security` di dalam transaksi; kontrak `RoleHolders` | `rbac` | B9, E19 |
+| 0.12 | ⬜ P1 — sebelum `approvals` (#13) | Penempatan dicabut → peran di perusahaan itu ikut dicabut (event organization, didengar rbac) | `organization`, `rbac` | E20 |
+| 0.13 | ⬜ P1 — sebelum `search` (#87), `crm` (#32) | Event siklus hidup data master (`customers`, `suppliers`, `users`) | `customers`, `suppliers`, `users` | E18 |
+| 0.14 | ⬜ P1 — sebelum gelombang 2 | `ErrorSummary` + penjaga perubahan belum disimpan; `DatePicker` id-ID + rentang dengan preset + `PeriodPicker`; toast dengan Urungkan; banner | `ui-forms`, `ui-feedback` | F23, F24 |
+| 0.15 | ⬜ P1 — sebelum gelombang 2 | Tabel: identitas baris sebagai tautan, state tanpa menghilangkan header, tata letak HP, header mengikuti density, pilih semua lintas halaman, pengumuman jumlah terpilih | `ui-data` | F25 |
+| 0.16 | ⬜ P1 — sebelum gelombang 2 | Breadcrumb yang bisa kembali ke daftar (API crumbs); tanggal mengikuti zona perusahaan/cabang | `app-shell`, `ui-core` | F23 |
+| 0.17 | ⬜ P1 — sebelum gelombang 3 (`visitor-log`, `queue`) dan 5 | Density sentuh/kiosk (target 44–48 px, tanpa hover, layar penuh + reset idle) | `bingkai-navy` atau preset sentuh baru | F23 |
+| 0.18 | ⬜ P1 | Kernel request: cincin fokus Button/FIELD ≥3:1 di kernel (kini ditimpa preset); penanda "satu atau banyak perusahaan" yang diekspor kernel | kernel (rudis-monorepo) | F23 |
+| 0.19 | ⬜ P1 | Alat: `npm run sandbox` gagal bila `organization` dipasang bersama `users` (siklus port terlambat); `testbed --only documents` gagal bila `.testbed/` belum ada | `scripts/` | G27 |
+| 0.20 | ⬜ P2 | MFA TOTP + kode pemulihan, daftar sesi aktif & cabut, undangan pengguna lewat email, wajib ganti sandi, daftar sandi bocor + 15 karakter; hard lock periode; bounce email; deteksi duplikat pelanggan; rantai hash audit; mode gelap | `auth`, `users`, `period`, `mailer`, `customers`, `audit-log`, tema | B, C |
 
 ## Gelombang 1 — Kit dasar
 

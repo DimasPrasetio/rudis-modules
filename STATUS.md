@@ -60,10 +60,10 @@ or the testbed's scenarios without touching it.
 
 | | |
 |---|---|
-| Date | 27 October 2026 |
-| Run on | the initial commit of rudis-modules (before it was made) |
+| Date | 28 October 2026 |
+| Run on | `4811e1f` (Gelombang 0, all four fix branches merged) |
 | `npm run check` | passes |
-| `npm run testbed` | all 8 scenarios: `All testbed checks passed: 420 checks.` — MySQL (local), sqlc 1.31.1, Node 20 |
+| `npm run testbed` | all 8 scenarios: `All testbed checks passed: 465 checks.` — MySQL (local), sqlc 1.31.1, Node 20 |
 
 Update this table with every full testbed run you make before a commit: the date, the commit
 you ran it on (`git rev-parse --short HEAD`) plus your change, and the run's last line. When a
@@ -88,6 +88,16 @@ wave; each module still starts as a plan in `docs/plans/` that the maintainer ap
 What is known and accepted for now — read before relying on the area. Remove a line when it is
 fixed; add one when you accept a limit.
 
+- **Sign-in limits are per process (`auth`).** The counters live in memory: several API
+  replicas each count on their own, and a restart forgets them. A shared store is not offered yet.
+- **Old installation-level audit rows (`audit-log`).** Records written before 0.3.0 that the
+  kernel filed without a company were stored under company 1 and cannot be told apart from
+  company 1's own; they stay there.
+- **Focus ring of kernel primitives (`bingkai-navy`).** The kernel's Button and FIELD use a
+  faint focus ring; the preset overrides it to a solid ≥3:1 outline. A project without the
+  preset keeps the faint one until the kernel request is released (ROADMAP.md › 0.18).
+- **One company or several (`mailer`).** The kernel exports no test for it, so mailer reads it
+  by recovering from `kernel.ScopeFrom`'s panic. Kernel request ROADMAP.md › 0.18.
 - **Audit is best-effort (kernel).** When writing an audit record fails, the kernel logs it and
   the change still commits, so a reopened period or a raised number can lack its security
   record. Candidate for a kernel request.
@@ -115,6 +125,19 @@ fixed; add one when you accept a limit.
 
 Newest first. One entry per change that released something or changed how the library works:
 date, what, the tags it created.
+
+- **28 Oct 2026 — Gelombang 0: fixes from the audit of the first 21 modules.**
+  - Released: `auth` 0.8.0, `users` 0.8.0, `settings` 0.3.1, `audit-log` 0.3.0, `mailer` 0.3.0,
+    `files` 0.3.0, `taxid` 0.2.0, `customers` 0.2.0, `suppliers` 0.2.0, `ui-core` 0.5.0,
+    `ui-forms` 0.3.0, `ui-data` 0.2.1, `app-shell` 0.6.0, `ui-gallery` 0.1.2, `bingkai-navy` 0.1.2.
+  - Data kept per company and personal data protected: installation-level audit and mail as
+    company 0 behind `audit-log.system` / `mailer.system`; no prefix search on a person's ID; files
+    of other modules out of reach of `files.read`.
+  - Security and correctness: sign-in limits count failures with progressive delay, idle
+    timeout; locked user updates; time zone kept; no double email; NPWP/NIK/NITKU rules.
+  - UI: keyboard focus ≥3:1 everywhere, skip link, page titles, `MoneyInput`.
+  - [ROADMAP.md](ROADMAP.md) gained Gelombang 0 (P0 done, P1/P2 open) and the mandatory rules
+    every new module must meet; plans now carry a design brief and a Syarat wajib section.
 
 - **28 Oct 2026 — ROADMAP.md: 88 modules to build.**
   - The old module plans (PLAN-MODUL-BERSAMA) and the candidate table under Next were removed;
