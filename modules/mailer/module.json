@@ -1,6 +1,6 @@
 {
   "id": "mailer",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "kind": "fullstack",
   "title": "Mailer",
   "summary": "Sends the app's email: modules queue a message (MailClient) — inside their own transaction — and a kernel task delivers it over SMTP with retries; an outbox page shows what was sent and what failed. Development without SMTP writes email to the log.",
@@ -21,7 +21,20 @@
     ],
     "kernel": []
   },
-  "ports": [],
+  "ports": [
+    {
+      "name": "SenderIdentity",
+      "required": false,
+      "description": "Who a company's email is from, as people read it (a settings module): the sender name becomes the company's name and replies go to the company's own address. The address stays MAIL_FROM (the domain SPF, DKIM, and DMARC are set up for). Without it every company's email comes from MAIL_FROM_NAME. Wired once every module is built (late).",
+      "adapters": {
+        "settings": {
+          "file": "adapters/senderidentity_settings.go",
+          "expr": "mailerSenderIdentity{settings: settingsModule.Client()}",
+          "requires": "0.3.0"
+        }
+      }
+    }
+  ],
   "ui": [
     "ui-core",
     "ui-data",
@@ -36,8 +49,13 @@
     {
       "name": "mailer.manage",
       "description": "Mengirim ulang email yang gagal"
+    },
+    {
+      "name": "mailer.system",
+      "description": "Melihat kotak keluar tingkat instalasi (email sebelum perusahaan dipilih)"
     }
   ],
+  "scoped": true,
   "owns_tables": [
     "mail_outbox"
   ],
@@ -105,7 +123,10 @@
       "routes": [
         "mailerModule.Routes(mux)"
       ],
-      "after": []
+      "after": [],
+      "late": [
+        "mailerModule.UseSenderIdentity({{port:SenderIdentity}})"
+      ]
     },
     "web": {
       "import": "@/modules/mailer/module",

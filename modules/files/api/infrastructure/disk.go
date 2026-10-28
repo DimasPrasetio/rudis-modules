@@ -117,6 +117,43 @@ func (d Disk) CleanPartials(olderThan time.Duration) error {
 	})
 }
 
+// Keys walks the store for complete objects older than olderThan and hands their keys to fn in
+// batches — what the orphan sweep checks against the rows.
+func (d Disk) Keys(olderThan time.Duration, batch int, fn func(keys []string) error) error {
+	cutoff := time.Now().Add(-olderThan)
+	var keys []string
+	err := filepath.WalkDir(d.Root, func(p string, e fs.DirEntry, err error) error {
+		if err != nil || e.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(d.Root, p)
+		if err != nil {
+			return nil
+		}
+		key := filepath.ToSlash(rel)
+		if !keyPattern.MatchString(key) {
+			return nil // a .part file, the write probe, anything not ours
+		}
+		if info, err := e.Info(); err != nil || !info.ModTime().Before(cutoff) {
+			return nil
+		}
+		keys = append(keys, key)
+		if len(keys) >= batch {
+			err := fn(keys)
+			keys = nil
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if len(keys) > 0 {
+		return fn(keys)
+	}
+	return nil
+}
+
 // ctxReader stops a copy when the request ends.
 type ctxReader struct {
 	ctx context.Context

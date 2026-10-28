@@ -1,6 +1,6 @@
 {
   "id": "audit-log",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "kind": "fullstack",
   "title": "Audit log",
   "summary": "The audit trail: fills the kernel's d.Audit, so every module's d.Audit.Record lands in one append-only table (who, what, target, before/after, IP, request ID), kept AUDIT_RETENTION_DAYS; a read-only \"Log aktivitas\" page with filters and details.",
@@ -31,6 +31,18 @@
           "expr": "auditUserDirectory{users: usersModule.Client()}"
         }
       }
+    },
+    {
+      "name": "ActorCompanies",
+      "required": false,
+      "description": "Which companies a person is placed in (an organization module). With several companies, a record made before any company is chosen (a sign-in, a reset by token) stays installation-level and is also filed in each company its actor is placed in, so that company's auditors see their own people's sign-ins. Without it such records are on the installation-level trail only. Wired once every module is built (late).",
+      "adapters": {
+        "organization": {
+          "file": "adapters/actorcompanies_organization.go",
+          "expr": "auditActorCompanies{organization: organizationModule.Client()}",
+          "requires": "0.1.0"
+        }
+      }
     }
   ],
   "ui": [
@@ -43,6 +55,10 @@
     {
       "name": "audit-log.read",
       "description": "Melihat log aktivitas"
+    },
+    {
+      "name": "audit-log.system",
+      "description": "Melihat log aktivitas tingkat instalasi (sebelum perusahaan dipilih)"
     }
   ],
   "scoped": true,
@@ -85,6 +101,9 @@
       ],
       "after": [
         "d.Audit.Provide(auditLogModule.Sink())"
+      ],
+      "late": [
+        "auditLogModule.UseActorCompanies({{port:ActorCompanies}})"
       ]
     },
     "web": {

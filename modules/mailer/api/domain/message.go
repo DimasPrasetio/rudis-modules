@@ -27,6 +27,7 @@ const (
 // Message is a queued email.
 type Message struct {
 	ID            int64
+	CompanyID     int64 // the company it was sent for; 0: installation-level
 	To            string
 	ToName        string
 	Subject       string

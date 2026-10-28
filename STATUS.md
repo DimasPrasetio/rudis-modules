@@ -19,12 +19,12 @@ or the testbed's scenarios without touching it.
 | Module | Kind | Version | Kernel ≥ | Scoped | Tested in |
 |---|---|---|---|---|---|
 | [app-shell](modules/app-shell/README.md) | web | 0.6.0 | 6 | — | full, organization, documents |
-| [audit-log](modules/audit-log/README.md) | fullstack | 0.2.0 | 6 | yes | full, organization, documents |
+| [audit-log](modules/audit-log/README.md) | fullstack | 0.3.0 | 6 | yes | full, organization, documents |
 | [auth](modules/auth/README.md) | fullstack | 0.8.0 | 6 | — | full, no-rbac, auth-alone, lifecycle, organization, documents |
 | [customers](modules/customers/README.md) | fullstack | 0.2.0 | 6 | yes | documents |
 | [docstate](modules/docstate/README.md) | gokit | 0.1.0 | 6 | — | documents |
-| [files](modules/files/README.md) | fullstack | 0.2.0 | 6 | yes | full, organization |
-| [mailer](modules/mailer/README.md) | fullstack | 0.2.0 | 6 | — | full, lifecycle, organization |
+| [files](modules/files/README.md) | fullstack | 0.3.0 | 6 | yes | full, organization |
+| [mailer](modules/mailer/README.md) | fullstack | 0.3.0 | 6 | yes | full, lifecycle, organization |
 | [money](modules/money/README.md) | gokit | 0.1.0 | 6 | — | documents |
 | [numbering](modules/numbering/README.md) | fullstack | 0.1.0 | 6 | yes | documents |
 | [organization](modules/organization/README.md) | fullstack | 0.1.0 | 6 | — | organization, documents |

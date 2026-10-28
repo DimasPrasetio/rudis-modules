@@ -2,6 +2,7 @@
 package presentation
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -18,6 +19,9 @@ import (
 const (
 	PermRead   = "mailer.read"
 	PermManage = "mailer.manage"
+	// PermSystem opens the installation-level outbox (email sent before any company is chosen)
+	// — held across the home company (company 1), where the installation is administered.
+	PermSystem = "mailer.system"
 )
 
 type messageDTO struct {
@@ -58,12 +62,47 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/v1/mailer/messages/{id}/retry", h.authz.Require(PermManage, http.HandlerFunc(h.retry)))
 }
 
+// reach is whose outbox the request works on: the installation-level one with ?scope=system
+// (mailer.system across the home company), else the active company's (perm across it).
+func (h *Handler) reach(r *http.Request, perm string) (application.Reach, error) {
+	ctx := r.Context()
+	if r.URL.Query().Get("scope") == "system" {
+		sc := kernel.ScopeFrom(ctx)
+		u, err := h.authz.Units(ctx, PermSystem)
+		if err != nil {
+			return application.Reach{}, err
+		}
+		return application.Reach{System: true, SystemAllowed: sc.CompanyID == kernel.DefaultCompany && sc.BranchID == 0 && u.AllBranches}, nil
+	}
+	u, err := h.authz.Units(ctx, perm)
+	if err != nil {
+		return application.Reach{}, err
+	}
+	return application.Reach{AllBranches: u.AllBranches}, nil
+}
+
+func fail(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, application.ErrSystemDenied):
+		response.Fail(w, http.StatusForbidden, "Kotak keluar tingkat instalasi hanya untuk pemegang izin mailer.system di seluruh perusahaan induk", nil)
+	case errors.Is(err, application.ErrNotEverywhere):
+		response.Fail(w, http.StatusForbidden, "Kotak keluar milik seluruh perusahaan: izin ini harus berlaku di seluruh perusahaan", nil)
+	default:
+		response.Error(w, r, err)
+	}
+}
+
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	p := pagination.FromRequest(r)
-	q := r.URL.Query()
-	msgs, total, err := h.svc.List(r.Context(), q.Get("status"), strings.TrimSpace(q.Get("q")), p)
+	reach, err := h.reach(r, PermRead)
 	if err != nil {
 		response.Error(w, r, err)
+		return
+	}
+	p := pagination.FromRequest(r)
+	q := r.URL.Query()
+	msgs, total, err := h.svc.List(r.Context(), reach, q.Get("status"), strings.TrimSpace(q.Get("q")), p)
+	if err != nil {
+		fail(w, r, err)
 		return
 	}
 	out := make([]messageDTO, len(msgs))
@@ -79,8 +118,13 @@ func (h *Handler) retry(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, err)
 		return
 	}
-	if err := h.svc.Retry(r.Context(), id); err != nil {
+	reach, err := h.reach(r, PermManage)
+	if err != nil {
 		response.Error(w, r, err)
+		return
+	}
+	if err := h.svc.Retry(r.Context(), reach, id); err != nil {
+		fail(w, r, err)
 		return
 	}
 	response.OK(w, "Email dijadwalkan untuk dikirim ulang", nil)

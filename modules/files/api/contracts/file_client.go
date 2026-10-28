@@ -39,6 +39,11 @@ type Upload struct {
 	// types (nil: the module's defaults — images, PDF, office documents, text).
 	MaxBytes int64
 	Allowed  []string
+	// ReadPermission, when set, lets a holder of it (and of files.read) open the file on the files
+	// administration page too, e.g. "expenses.read". Empty: the file is reached only through the
+	// owner module's own endpoints — the default for personal data (an ID scan, a payslip), whose
+	// owner decides who may see it.
+	ReadPermission string
 }
 
 // FileClient stores files for other modules. A module serves its own files through its own

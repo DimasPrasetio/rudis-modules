@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"__GO_MODULE__/internal/kernel"
@@ -31,13 +32,13 @@ func (r *Repository) q(ctx context.Context) *sqlc.Queries { return sqlc.New(r.tx
 
 func (r *Repository) Enqueue(ctx context.Context, m domain.Message) (int64, error) {
 	return r.q(ctx).Enqueue(ctx, sqlc.EnqueueParams{
-		ToAddress: m.To, ToName: m.ToName, Subject: m.Subject, TextBody: m.Text, HtmlBody: m.HTML,
+		CompanyID: m.CompanyID, ToAddress: m.To, ToName: m.ToName, Subject: m.Subject, TextBody: m.Text, HtmlBody: m.HTML,
 		NextAttemptAt: m.NextAttemptAt, CreatedAt: m.CreatedAt,
 	})
 }
 
-func (r *Repository) Get(ctx context.Context, id int64) (domain.Message, error) {
-	row, err := r.q(ctx).GetMessage(ctx, id)
+func (r *Repository) Get(ctx context.Context, company, id int64) (domain.Message, error) {
+	row, err := r.q(ctx).GetMessage(ctx, sqlc.GetMessageParams{ID: id, CompanyID: company})
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Message{}, application.ErrNotFound
 	}
@@ -45,74 +46,81 @@ func (r *Repository) Get(ctx context.Context, id int64) (domain.Message, error) 
 		return domain.Message{}, err
 	}
 	return domain.Message{
-		ID: row.ID, To: row.ToAddress, ToName: row.ToName, Subject: row.Subject, Text: row.TextBody, HTML: row.HtmlBody,
+		ID: row.ID, CompanyID: company, To: row.ToAddress, ToName: row.ToName, Subject: row.Subject, Text: row.TextBody, HTML: row.HtmlBody,
 		Status: row.Status, Attempts: int(row.Attempts), NextAttemptAt: row.NextAttemptAt, LastError: row.LastError,
 		CreatedAt: row.CreatedAt, SentAt: row.SentAt.Time,
 	}, nil
 }
 
-func (r *Repository) ClaimAttempt(ctx context.Context, id int64, attempt int, now, until time.Time) (bool, error) {
+func (r *Repository) ClaimAttempt(ctx context.Context, company, id int64, attempt int, now, until time.Time) (bool, error) {
 	n, err := r.q(ctx).ClaimAttempt(ctx, sqlc.ClaimAttemptParams{
-		Now: now, LockedUntil: sql.NullTime{Time: until, Valid: true}, ID: id, AttemptsMade: int32(attempt - 1),
+		Now: now, LockedUntil: sql.NullTime{Time: until, Valid: true}, ID: id, CompanyID: company, AttemptsMade: int32(attempt - 1),
 		FreeBefore: sql.NullTime{Time: now, Valid: true},
 	})
 	return n == 1, err
 }
 
-func (r *Repository) ReleaseAttempt(ctx context.Context, id int64, attempt int) error {
-	return r.q(ctx).ReleaseAttempt(ctx, sqlc.ReleaseAttemptParams{ID: id, Attempts: int32(attempt - 1)})
+func (r *Repository) ReleaseAttempt(ctx context.Context, company, id int64, attempt int) error {
+	return r.q(ctx).ReleaseAttempt(ctx, sqlc.ReleaseAttemptParams{ID: id, CompanyID: company, Attempts: int32(attempt - 1)})
 }
 
-func (r *Repository) Postpone(ctx context.Context, id int64, attempt int, until, staleBefore time.Time) (bool, error) {
-	n, err := r.q(ctx).Postpone(ctx, sqlc.PostponeParams{Due: until, ID: id, AttemptsMade: int32(attempt - 1), StaleBefore: staleBefore})
+func (r *Repository) Postpone(ctx context.Context, company, id int64, attempt int, until, staleBefore time.Time) (bool, error) {
+	n, err := r.q(ctx).Postpone(ctx, sqlc.PostponeParams{Due: until, ID: id, CompanyID: company, AttemptsMade: int32(attempt - 1), StaleBefore: staleBefore})
 	return n == 1, err
 }
 
-func (r *Repository) MarkSent(ctx context.Context, id int64, attempts int, at time.Time) error {
-	return r.q(ctx).MarkSent(ctx, sqlc.MarkSentParams{Attempts: int32(attempts), SentAt: sql.NullTime{Time: at, Valid: true}, ID: id})
+func (r *Repository) MarkSent(ctx context.Context, company, id int64, attempts int, at time.Time) error {
+	return r.q(ctx).MarkSent(ctx, sqlc.MarkSentParams{Attempts: int32(attempts), SentAt: sql.NullTime{Time: at, Valid: true}, ID: id, CompanyID: company})
 }
 
-func (r *Repository) MarkFailedAttempt(ctx context.Context, id int64, status string, attempts int, next time.Time, lastErr string) error {
-	return r.q(ctx).MarkFailedAttempt(ctx, sqlc.MarkFailedAttemptParams{Status: status, Attempts: int32(attempts), NextAttemptAt: next, LastError: lastErr, ID: id})
+func (r *Repository) MarkFailedAttempt(ctx context.Context, company, id int64, status string, attempts int, next time.Time, lastErr string) error {
+	return r.q(ctx).MarkFailedAttempt(ctx, sqlc.MarkFailedAttemptParams{Status: status, Attempts: int32(attempts), NextAttemptAt: next, LastError: lastErr, ID: id, CompanyID: company})
 }
 
-func (r *Repository) Stale(ctx context.Context, before time.Time) ([]domain.Message, error) {
-	rows, err := r.q(ctx).Stale(ctx, before)
+func (r *Repository) SystemStale(ctx context.Context, before time.Time) ([]domain.Message, error) {
+	rows, err := r.q(ctx).SystemStale(ctx, before)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]domain.Message, len(rows))
 	for i, row := range rows {
-		out[i] = domain.Message{ID: row.ID, Attempts: int(row.Attempts)}
+		out[i] = domain.Message{ID: row.ID, CompanyID: row.CompanyID, Attempts: int(row.Attempts)}
 	}
 	return out, nil
 }
 
-func (r *Repository) Requeue(ctx context.Context, id int64, now time.Time) (bool, error) {
-	n, err := r.q(ctx).Requeue(ctx, sqlc.RequeueParams{NextAttemptAt: now, ID: id})
+func (r *Repository) Requeue(ctx context.Context, company, id int64, now time.Time) (bool, error) {
+	n, err := r.q(ctx).Requeue(ctx, sqlc.RequeueParams{NextAttemptAt: now, ID: id, CompanyID: company})
 	return n > 0, err
 }
 
-func (r *Repository) Prune(ctx context.Context, sentBefore, failedBefore time.Time) (int64, error) {
-	return r.q(ctx).Prune(ctx, sqlc.PruneParams{SentBefore: sentBefore, FailedBefore: failedBefore})
+func (r *Repository) SystemPrune(ctx context.Context, sentBefore, failedBefore time.Time) (int64, error) {
+	return r.q(ctx).SystemPrune(ctx, sqlc.SystemPruneParams{SentBefore: sentBefore, FailedBefore: failedBefore})
 }
 
-func (r *Repository) List(ctx context.Context, status, search string, p pagination.Params) ([]domain.Message, int64, error) {
-	rows, err := r.q(ctx).ListMessages(ctx, sqlc.ListMessagesParams{Status: status, Search: search, Limit: int32(p.Limit), Offset: int32(p.Offset())})
+func (r *Repository) List(ctx context.Context, company int64, status, search string, p pagination.Params) ([]domain.Message, int64, error) {
+	pattern := likeEscape(search)
+	rows, err := r.q(ctx).ListMessages(ctx, sqlc.ListMessagesParams{CompanyID: company, Status: status, Search: pattern, Limit: int32(p.Limit), Offset: int32(p.Offset())})
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := r.q(ctx).CountMessages(ctx, sqlc.CountMessagesParams{Status: status, Search: search})
+	total, err := r.q(ctx).CountMessages(ctx, sqlc.CountMessagesParams{CompanyID: company, Status: status, Search: pattern})
 	if err != nil {
 		return nil, 0, err
 	}
 	out := make([]domain.Message, len(rows))
 	for i, row := range rows {
 		out[i] = domain.Message{
-			ID: row.ID, To: row.ToAddress, ToName: row.ToName, Subject: row.Subject, Status: row.Status,
+			ID: row.ID, CompanyID: company, To: row.ToAddress, ToName: row.ToName, Subject: row.Subject, Status: row.Status,
 			Attempts: int(row.Attempts), NextAttemptAt: row.NextAttemptAt, LastError: row.LastError,
 			CreatedAt: row.CreatedAt, SentAt: row.SentAt.Time,
 		}
 	}
 	return out, total, nil
+}
+
+// likeEscape makes a search term match literally inside LIKE '%…%': "%" and "_" typed by a
+// user are characters, not wildcards (MySQL's default escape character is the backslash).
+func likeEscape(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }

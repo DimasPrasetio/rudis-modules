@@ -1,6 +1,6 @@
 {
   "id": "files",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "kind": "fullstack",
   "title": "Files",
   "summary": "Stores uploaded files for other modules (FileClient): streamed to DATA_DIR on disk, type decided from the content (no SVG/HTML), size-capped, hashed; deleted files kept 30 days. An administrator's page lists, downloads, and deletes them.",
@@ -31,7 +31,7 @@
   "permissions": [
     {
       "name": "files.read",
-      "description": "Melihat dan mengunduh semua berkas"
+      "description": "Melihat dan mengunduh berkas yang modul pemiliknya izinkan"
     },
     {
       "name": "files.manage",

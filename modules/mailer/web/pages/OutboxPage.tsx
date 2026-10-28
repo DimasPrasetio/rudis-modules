@@ -16,6 +16,7 @@ import { useResource } from "@/shared/hooks/use-resource";
 import { formatDateTime } from "@/shared/lib/format";
 import { notify } from "@/shared/lib/notify";
 import { listMessages, retryMessage } from "@/modules/mailer/services/mailer.service";
+import type { OutboxScope } from "@/modules/mailer/services/mailer.service";
 import type { MailStatus, OutboxMessage } from "@/modules/mailer/types/mail";
 
 const STATUS: Record<MailStatus, { label: string; tone: Tone }> = {
@@ -38,14 +39,16 @@ export default function OutboxPage() {
   const [limit, setLimit] = useState(25);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
+  const [scope, setScope] = useState<OutboxScope>("");
   const canManage = useCan("mailer.manage");
-  const messages = useResource((signal) => listMessages({ page, limit, q: query, status }, signal), [page, limit, query, status]);
+  const canSystem = useCan("mailer.system");
+  const messages = useResource((signal) => listMessages({ page, limit, q: query, status, scope }, signal), [page, limit, query, status, scope]);
   const rows = messages.data?.data ?? [];
   const meta = messages.data?.meta ?? { page, limit, total: 0, total_pages: 0 };
 
   async function retry(m: OutboxMessage) {
     try {
-      await retryMessage(m.id);
+      await retryMessage(m.id, scope);
       notify.success("Email dijadwalkan untuk dikirim ulang");
       messages.reload();
     } catch (err) {
@@ -106,15 +109,31 @@ export default function OutboxPage() {
             />
           }
           primary={
-            <Segmented
-              aria-label="Status"
-              options={FILTERS}
-              value={status}
-              onChange={(v) => {
-                setPage(1);
-                setStatus(v);
-              }}
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <Segmented
+                aria-label="Status"
+                options={FILTERS}
+                value={status}
+                onChange={(v) => {
+                  setPage(1);
+                  setStatus(v);
+                }}
+              />
+              {canSystem && (
+                <Segmented
+                  aria-label="Cakupan"
+                  options={[
+                    { value: "", label: "Perusahaan aktif" },
+                    { value: "system", label: "Tingkat instalasi" },
+                  ]}
+                  value={scope}
+                  onChange={(v) => {
+                    setPage(1);
+                    setScope(v as OutboxScope);
+                  }}
+                />
+              )}
+            </div>
           }
         />
         <DataTable

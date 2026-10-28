@@ -13,6 +13,7 @@ import (
 	"__GO_MODULE__/internal/modules/mailer/application"
 	"__GO_MODULE__/internal/modules/mailer/contracts"
 	"__GO_MODULE__/internal/modules/mailer/domain"
+	"__GO_MODULE__/internal/modules/mailer/ports"
 	"__GO_MODULE__/internal/shared/pagination"
 )
 
@@ -37,7 +38,7 @@ func (r *memRepo) Enqueue(_ context.Context, m domain.Message) (int64, error) {
 	return m.ID, nil
 }
 
-func (r *memRepo) Get(_ context.Context, id int64) (domain.Message, error) {
+func (r *memRepo) Get(_ context.Context, _, id int64) (domain.Message, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	m, ok := r.rows[id]
@@ -47,7 +48,7 @@ func (r *memRepo) Get(_ context.Context, id int64) (domain.Message, error) {
 	return *m, nil
 }
 
-func (r *memRepo) Postpone(_ context.Context, id int64, attempt int, until, staleBefore time.Time) (bool, error) {
+func (r *memRepo) Postpone(_ context.Context, _, id int64, attempt int, until, staleBefore time.Time) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	m := r.rows[id]
@@ -58,14 +59,14 @@ func (r *memRepo) Postpone(_ context.Context, id int64, attempt int, until, stal
 	return true, nil
 }
 
-func (r *memRepo) ReleaseAttempt(_ context.Context, id int64, _ int) error {
+func (r *memRepo) ReleaseAttempt(_ context.Context, _, id int64, _ int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.locked, id)
 	return nil
 }
 
-func (r *memRepo) ClaimAttempt(_ context.Context, id int64, attempt int, now, until time.Time) (bool, error) {
+func (r *memRepo) ClaimAttempt(_ context.Context, _, id int64, attempt int, now, until time.Time) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	m := r.rows[id]
@@ -77,7 +78,7 @@ func (r *memRepo) ClaimAttempt(_ context.Context, id int64, attempt int, now, un
 	return true, nil
 }
 
-func (r *memRepo) MarkSent(_ context.Context, id int64, attempts int, at time.Time) error {
+func (r *memRepo) MarkSent(_ context.Context, _, id int64, attempts int, at time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	m := r.rows[id]
@@ -86,7 +87,7 @@ func (r *memRepo) MarkSent(_ context.Context, id int64, attempts int, at time.Ti
 	return nil
 }
 
-func (r *memRepo) MarkFailedAttempt(_ context.Context, id int64, status string, attempts int, next time.Time, lastErr string) error {
+func (r *memRepo) MarkFailedAttempt(_ context.Context, _, id int64, status string, attempts int, next time.Time, lastErr string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	m := r.rows[id]
@@ -95,7 +96,7 @@ func (r *memRepo) MarkFailedAttempt(_ context.Context, id int64, status string, 
 	return nil
 }
 
-func (r *memRepo) Requeue(_ context.Context, id int64, now time.Time) (bool, error) {
+func (r *memRepo) Requeue(_ context.Context, _, id int64, now time.Time) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	m, ok := r.rows[id]
@@ -106,7 +107,7 @@ func (r *memRepo) Requeue(_ context.Context, id int64, now time.Time) (bool, err
 	return true, nil
 }
 
-func (r *memRepo) Stale(_ context.Context, before time.Time) ([]domain.Message, error) {
+func (r *memRepo) SystemStale(_ context.Context, before time.Time) ([]domain.Message, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []domain.Message
@@ -118,10 +119,18 @@ func (r *memRepo) Stale(_ context.Context, before time.Time) ([]domain.Message, 
 	return out, nil
 }
 
-func (r *memRepo) Prune(context.Context, time.Time, time.Time) (int64, error) { return 0, nil }
+func (r *memRepo) SystemPrune(context.Context, time.Time, time.Time) (int64, error) { return 0, nil }
 
-func (r *memRepo) List(context.Context, string, string, pagination.Params) ([]domain.Message, int64, error) {
-	return nil, 0, nil
+func (r *memRepo) List(_ context.Context, company int64, _, _ string, _ pagination.Params) ([]domain.Message, int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.Message
+	for _, m := range r.rows {
+		if m.CompanyID == company {
+			out = append(out, *m)
+		}
+	}
+	return out, int64(len(out)), nil
 }
 
 // transport records what it was asked to send and fails as told.
@@ -145,7 +154,7 @@ func (noAudit) Record(context.Context, kernel.AuditEntry) {}
 func setup(t *testing.T) (*application.Service, *memRepo, *transport, *kerneltest.Kit) {
 	k := kerneltest.Deps(t)
 	repo, tr := newRepo(), &transport{}
-	svc := application.NewService(repo, tr, application.Sender{Address: "noreply@app.test", Name: "App", AppName: "App"}, noAudit{}, k.Deps.Tx, k.Deps.Tasks)
+	svc := application.NewService(repo, tr, application.Sender{Address: "noreply@app.test", Name: "App", AppName: "App"}, noAudit{}, k.Deps.Tx, k.Deps.Tasks, nil)
 	svc.RegisterTasks()
 	return svc, repo, tr, k
 }
@@ -202,7 +211,7 @@ func TestTemporaryFailuresRetryThenGiveUp(t *testing.T) {
 		t.Fatalf("after %d attempts: status=%s attempts=%d", domain.MaxAttempts, repo.rows[id].Status, repo.rows[id].Attempts)
 	}
 	tr.fail = nil
-	if err := svc.Retry(context.Background(), id); err != nil || repo.rows[id].Status != domain.StatusPending {
+	if err := svc.Retry(context.Background(), application.Reach{AllBranches: true}, id); err != nil || repo.rows[id].Status != domain.StatusPending {
 		t.Fatalf("retry: %v %s", err, repo.rows[id].Status)
 	}
 	k.RunTasks()
@@ -252,7 +261,7 @@ func TestOneAttemptIsDeliveredOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Another delivery of attempt 1 (a rescue, a retried task) is sending it right now.
-	if ok, _ := repo.ClaimAttempt(ctx, id, 1, time.Now(), time.Now().Add(time.Minute)); !ok {
+	if ok, _ := repo.ClaimAttempt(ctx, 1, id, 1, time.Now(), time.Now().Add(time.Minute)); !ok {
 		t.Fatal("claim")
 	}
 	k.RunTasks()
@@ -261,5 +270,92 @@ func TestOneAttemptIsDeliveredOnce(t *testing.T) {
 	}
 	if err := svc.Rescue(ctx); err != nil || len(k.Enqueued()) != 0 {
 		t.Fatalf("a message being sent was rescued: %v %d", err, len(k.Enqueued()))
+	}
+}
+
+type severalCompanies struct{}
+
+func (severalCompanies) Resolve(context.Context, int64, string) (kernel.Scope, error) {
+	return kernel.Scope{}, kernel.ErrScopeDenied
+}
+
+func (severalCompanies) Companies(context.Context) ([]kernel.Scope, error) {
+	return []kernel.Scope{{CompanyID: 1}, {CompanyID: 2}}, nil
+}
+
+func TestAMessageBelongsToTheCompanyItWasSentFor(t *testing.T) {
+	svc, repo, _, k := setup(t)
+	send := func(ctx context.Context) int64 {
+		id, err := svc.Send(ctx, contracts.Message{To: "ana@example.com", Subject: "Halo", Text: "Isi"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	in2 := kernel.WithScope(context.Background(), kernel.Scope{CompanyID: 2})
+	a, b := send(in2), send(context.Background())
+	if repo.rows[a].CompanyID != 2 {
+		t.Fatalf("sent in company 2, filed under %d", repo.rows[a].CompanyID)
+	}
+	if repo.rows[b].CompanyID != 1 {
+		t.Fatalf("an app with one company files unscoped email under it, got %d", repo.rows[b].CompanyID)
+	}
+	k.Deps.Scope.Provide(severalCompanies{}) // an organization module: several companies, no default
+	c := send(context.Background())
+	if repo.rows[c].CompanyID != 0 {
+		t.Fatalf("with several companies, unscoped email (a reset by token) is installation-level, got company %d", repo.rows[c].CompanyID)
+	}
+	k.Deps.Scope.Provide(nil)
+	everywhere := application.Reach{AllBranches: true}
+	if got, n, _ := svc.List(in2, everywhere, "", "", pagination.Params{Page: 1, Limit: 10}); n != 1 || got[0].ID != a {
+		t.Fatalf("company 2's outbox shows %d messages: %+v", n, got)
+	}
+	if _, _, err := svc.List(in2, application.Reach{System: true}, "", "", pagination.Params{Page: 1, Limit: 10}); !errors.Is(err, application.ErrSystemDenied) {
+		t.Fatalf("the installation-level outbox opened without mailer.system: %v", err)
+	}
+	if _, _, err := svc.List(in2, application.Reach{}, "", "", pagination.Params{Page: 1, Limit: 10}); !errors.Is(err, application.ErrNotEverywhere) {
+		t.Fatalf("a branch-only reader saw the company's outbox: %v", err)
+	}
+	if err := svc.Retry(in2, everywhere, b); err == nil {
+		t.Fatal("company 2 requeued company 1's message") // memRepo ignores the company; the error is "not failed"
+	}
+}
+
+func TestAConfigurationRefusalIsRetriedNotFailed(t *testing.T) {
+	svc, repo, tr, k := setup(t)
+	id, err := svc.Send(context.Background(), contracts.Message{To: "ana@example.com", Subject: "Halo", Text: "Isi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr.fail = application.ConfigError{Err: errors.New("535 5.7.8 authentication failed")}
+	k.RunTasks()
+	m := repo.rows[id]
+	if m.Status == domain.StatusFailed && m.Attempts < domain.MaxAttempts {
+		t.Fatalf("a configuration error settled the message after %d attempt(s)", m.Attempts)
+	}
+	if !strings.Contains(m.LastError, "konfigurasi SMTP") {
+		t.Fatalf("last error does not say it is the configuration: %q", m.LastError)
+	}
+}
+
+type identity struct{}
+
+func (i identity) Sender(ctx context.Context) (ports.Identity, error) {
+	if kernel.ScopeFrom(ctx).CompanyID != 2 {
+		return ports.Identity{}, errors.New("asked for the wrong company")
+	}
+	return ports.Identity{Name: "Toko Dua", ReplyTo: "halo@tokodua.test"}, nil
+}
+
+func TestAMessageIsNamedAfterItsCompany(t *testing.T) {
+	svc, _, tr, k := setup(t)
+	svc.UseSenderIdentity(identity{})
+	in2 := kernel.WithScope(context.Background(), kernel.Scope{CompanyID: 2})
+	if _, err := svc.Send(in2, contracts.Message{To: "ana@example.com", Subject: "Halo", Text: "Isi", HTML: "<p>Isi</p>"}); err != nil {
+		t.Fatal(err)
+	}
+	k.RunTasks()
+	if len(tr.sent) != 1 || tr.sent[0].FromName != "Toko Dua" || tr.sent[0].ReplyTo != "halo@tokodua.test" || tr.sent[0].From != "noreply@app.test" {
+		t.Fatalf("sent %+v", tr.sent)
 	}
 }

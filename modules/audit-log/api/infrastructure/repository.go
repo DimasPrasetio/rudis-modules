@@ -35,6 +35,9 @@ func (r *Repository) Insert(ctx context.Context, e domain.Entry) error {
 }
 
 func (r *Repository) List(ctx context.Context, f application.Filter, p pagination.Params) ([]domain.Entry, int64, error) {
+	if f.Branches != nil {
+		return r.listInBranches(ctx, f, p)
+	}
 	actor := sql.NullInt64{Int64: f.Actor, Valid: true}
 	rows, err := r.q(ctx).ListEntries(ctx, sqlc.ListEntriesParams{CompanyID: f.Company, Kind: f.Kind, Module: f.Module, Actor: actor, Target: f.Target,
 		FromAt: f.From, ToAt: f.To, Limit: int32(p.Limit), Offset: int32(p.Offset())})
@@ -48,11 +51,33 @@ func (r *Repository) List(ctx context.Context, f application.Filter, p paginatio
 	}
 	out := make([]domain.Entry, len(rows))
 	for i, row := range rows {
-		out[i] = domain.Entry{ID: row.ID, OccurredAt: row.OccurredAt, ActorID: row.ActorID.Int64, Kind: row.Kind, CompanyID: f.Company, BranchID: row.BranchID,
-			Module: row.Module, Action: row.Action,
-			Target: row.Target, Summary: row.Summary, Data: row.Data, IP: row.Ip, RequestID: row.RequestID}
+		out[i] = toEntry(f.Company, sqlc.ListEntriesInBranchesRow(row))
 	}
 	return out, total, nil
+}
+
+func (r *Repository) listInBranches(ctx context.Context, f application.Filter, p pagination.Params) ([]domain.Entry, int64, error) {
+	actor := sql.NullInt64{Int64: f.Actor, Valid: true}
+	rows, err := r.q(ctx).ListEntriesInBranches(ctx, sqlc.ListEntriesInBranchesParams{CompanyID: f.Company, Branches: f.Branches, Kind: f.Kind, Module: f.Module,
+		Actor: actor, Target: f.Target, FromAt: f.From, ToAt: f.To, Limit: int32(p.Limit), Offset: int32(p.Offset())})
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := r.q(ctx).CountEntriesInBranches(ctx, sqlc.CountEntriesInBranchesParams{CompanyID: f.Company, Branches: f.Branches, Kind: f.Kind, Module: f.Module,
+		Actor: actor, Target: f.Target, FromAt: f.From, ToAt: f.To})
+	if err != nil {
+		return nil, 0, err
+	}
+	out := make([]domain.Entry, len(rows))
+	for i, row := range rows {
+		out[i] = toEntry(f.Company, row)
+	}
+	return out, total, nil
+}
+
+func toEntry(company int64, row sqlc.ListEntriesInBranchesRow) domain.Entry {
+	return domain.Entry{ID: row.ID, OccurredAt: row.OccurredAt, ActorID: row.ActorID.Int64, Kind: row.Kind, CompanyID: company, BranchID: row.BranchID,
+		Module: row.Module, Action: row.Action, Target: row.Target, Summary: row.Summary, Data: row.Data, IP: row.Ip, RequestID: row.RequestID}
 }
 
 func (r *Repository) Modules(ctx context.Context, company int64) ([]string, error) {

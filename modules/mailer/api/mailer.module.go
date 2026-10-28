@@ -18,6 +18,7 @@ import (
 	"__GO_MODULE__/internal/modules/mailer/application"
 	"__GO_MODULE__/internal/modules/mailer/contracts"
 	"__GO_MODULE__/internal/modules/mailer/infrastructure"
+	"__GO_MODULE__/internal/modules/mailer/ports"
 	"__GO_MODULE__/internal/modules/mailer/presentation"
 )
 
@@ -34,12 +35,13 @@ func New(d *kernel.Deps) (*Module, error) {
 	d.Authz.Declare(
 		kernel.Permission{Name: presentation.PermRead, Module: "mailer", Description: "Melihat kotak keluar email"},
 		kernel.Permission{Name: presentation.PermManage, Module: "mailer", Description: "Mengirim ulang email yang gagal"},
+		kernel.Permission{Name: presentation.PermSystem, Module: "mailer", Description: "Melihat kotak keluar tingkat instalasi (email sebelum perusahaan dipilih)"},
 	)
 	transport, from, err := transportFromEnv(d)
 	if err != nil {
 		return nil, fmt.Errorf("mailer: %w", err)
 	}
-	svc := application.NewService(infrastructure.NewRepository(d.Tx), transport, from, d.Audit, d.Tx, d.Tasks)
+	svc := application.NewService(infrastructure.NewRepository(d.Tx), transport, from, d.Audit, d.Tx, d.Tasks, d.Log)
 	svc.RegisterTasks()
 	d.Jobs.Daily("mailer.prune", "03:30", svc.Prune)
 	d.Jobs.Every("mailer.rescue", 10*time.Minute, svc.Rescue)
@@ -80,6 +82,10 @@ func transportFromEnv(d *kernel.Deps) (application.Transport, application.Sender
 	}
 	return infrastructure.SMTP{Host: host, Port: port, Username: config.Get("SMTP_USERNAME", ""), Password: config.Get("SMTP_PASSWORD", ""), TLS: mode}, from, nil
 }
+
+// UseSenderIdentity wires the optional SenderIdentity port — from register.go.late, once the
+// provider (a settings module, which needs files) is built.
+func (m *Module) UseSenderIdentity(i ports.SenderIdentity) { m.svc.UseSenderIdentity(i) }
 
 // Routes mounts /api/v1/mailer.
 func (m *Module) Routes(mux *http.ServeMux) { m.handler.Routes(mux) }

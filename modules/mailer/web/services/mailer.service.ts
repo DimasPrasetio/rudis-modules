@@ -4,11 +4,15 @@ import type { OutboxMessage } from "@/modules/mailer/types/mail";
 
 const BASE = "/api/v1/mailer";
 
-export async function listMessages(params: { page: number; limit: number; q: string; status: string }, signal?: AbortSignal): Promise<ApiPage<OutboxMessage>> {
-  const { data } = await httpClient.get<ApiPage<OutboxMessage>>(`${BASE}/messages`, { params, signal });
+/** "system": the installation-level outbox (mailer.system across the home company). */
+export type OutboxScope = "" | "system";
+
+export async function listMessages(params: { page: number; limit: number; q: string; status: string; scope: OutboxScope }, signal?: AbortSignal): Promise<ApiPage<OutboxMessage>> {
+  const { scope, ...rest } = params;
+  const { data } = await httpClient.get<ApiPage<OutboxMessage>>(`${BASE}/messages`, { params: scope ? { ...rest, scope } : rest, signal });
   return data;
 }
 
-export async function retryMessage(id: number): Promise<void> {
-  await httpClient.post(`${BASE}/messages/${id}/retry`, {});
+export async function retryMessage(id: number, scope: OutboxScope): Promise<void> {
+  await httpClient.post(`${BASE}/messages/${id}/retry`, {}, { params: scope ? { scope } : {} });
 }

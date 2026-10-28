@@ -32,7 +32,7 @@
     },
     {
       "id": "audit-log",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "kind": "fullstack",
       "title": "Audit log",
       "summary": "The audit trail: fills the kernel's d.Audit, so every module's d.Audit.Record lands in one append-only table (who, what, target, before/after, IP, request ID), kept AUDIT_RETENTION_DAYS; a read-only \"Log aktivitas\" page with filters and details.",
@@ -53,7 +53,8 @@
         ]
       },
       "permissions": [
-        "audit-log.read"
+        "audit-log.read",
+        "audit-log.system"
       ],
       "ports": [
         {
@@ -62,6 +63,14 @@
           "description": "Name the people in the trail. Without it they show as \"Pengguna #12\".",
           "adapters": [
             "users"
+          ]
+        },
+        {
+          "name": "ActorCompanies",
+          "required": false,
+          "description": "Which companies a person is placed in (an organization module). With several companies, a record made before any company is chosen (a sign-in, a reset by token) stays installation-level and is also filed in each company its actor is placed in, so that company's auditors see their own people's sign-ins. Without it such records are on the installation-level trail only. Wired once every module is built (late).",
+          "adapters": [
+            "organization"
           ]
         }
       ],
@@ -223,7 +232,7 @@
     },
     {
       "id": "files",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "kind": "fullstack",
       "title": "Files",
       "summary": "Stores uploaded files for other modules (FileClient): streamed to DATA_DIR on disk, type decided from the content (no SVG/HTML), size-capped, hashed; deleted files kept 30 days. An administrator's page lists, downloads, and deletes them.",
@@ -265,7 +274,7 @@
     },
     {
       "id": "mailer",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "kind": "fullstack",
       "title": "Mailer",
       "summary": "Sends the app's email: modules queue a message (MailClient) — inside their own transaction — and a kernel task delivers it over SMTP with retries; an outbox page shows what was sent and what failed. Development without SMTP writes email to the log.",
@@ -288,9 +297,19 @@
       },
       "permissions": [
         "mailer.read",
-        "mailer.manage"
+        "mailer.manage",
+        "mailer.system"
       ],
-      "ports": [],
+      "ports": [
+        {
+          "name": "SenderIdentity",
+          "required": false,
+          "description": "Who a company's email is from, as people read it (a settings module): the sender name becomes the company's name and replies go to the company's own address. The address stays MAIL_FROM (the domain SPF, DKIM, and DMARC are set up for). Without it every company's email comes from MAIL_FROM_NAME. Wired once every module is built (late).",
+          "adapters": [
+            "settings"
+          ]
+        }
+      ],
       "ui": [
         "ui-core",
         "ui-data",
@@ -301,7 +320,7 @@
       "owns_tables": [
         "mail_outbox"
       ],
-      "scoped": false,
+      "scoped": true,
       "emits": [],
       "listens": []
     },

@@ -8,10 +8,12 @@ import (
 
 var png = []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89")
 
-func zipBytes() []byte {
+func zipBytes() []byte { return zipWith("word/document.xml") }
+
+func zipWith(first string) []byte {
 	var b bytes.Buffer
 	w := zip.NewWriter(&b)
-	f, _ := w.Create("word/document.xml")
+	f, _ := w.Create(first)
 	_, _ = f.Write([]byte("<w:document/>"))
 	_ = w.Close()
 	return b.Bytes()
@@ -27,6 +29,7 @@ func TestDetectTrustsTheBytesNotTheName(t *testing.T) {
 		{"logo.jpg", png, "image/png"}, // the name lies; the bytes win
 		{"surat.docx", zipBytes(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
 		{"arsip.zip", zipBytes(), "application/zip"},
+		{"palsu.docx", zipWith("payload.exe"), "application/octet-stream"}, // a ZIP named .docx with no Office package inside
 		{"data.csv", []byte("a,b\n1,2\n"), "text/csv"},
 		{"catatan.txt", []byte("halo"), "text/plain"},
 		{"icon.svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`), "application/octet-stream"},
@@ -57,6 +60,20 @@ func TestCleanName(t *testing.T) {
 	} {
 		if got := CleanName(in); got != want {
 			t.Errorf("CleanName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestNameForMatchesTheContent(t *testing.T) {
+	for _, c := range [][3]string{
+		{"application/pdf", "laporan.html", "laporan.pdf"},
+		{"application/pdf", "laporan.PDF", "laporan.PDF"},
+		{"image/jpeg", "foto.jpeg", "foto.jpeg"},
+		{"image/png", "logo", "logo.png"},
+		{"text/csv", "data.csv", "data.csv"},
+	} {
+		if got := NameFor(c[0], c[1]); got != c[2] {
+			t.Errorf("NameFor(%s, %s) = %s, want %s", c[0], c[1], got, c[2])
 		}
 	}
 }

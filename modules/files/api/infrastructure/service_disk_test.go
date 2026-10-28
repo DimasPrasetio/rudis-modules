@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -59,8 +60,34 @@ func (m *memRepo) Lock(_ context.Context, id int64, _ time.Time) error {
 	return nil
 }
 
-func (m *memRepo) List(context.Context, string, string, pagination.Params) ([]domain.Stored, int64, error) {
-	return nil, 0, nil
+func (m *memRepo) ListVisible(_ context.Context, readable []string, _, _ string, _ pagination.Params) ([]domain.Stored, int64, error) {
+	var out []domain.Stored
+	for id, f := range m.rows {
+		if _, gone := m.deleted[id]; !gone && (f.Owner == application.AdminOwner || (f.ReadPermission != "" && slices.Contains(readable, f.ReadPermission))) {
+			out = append(out, *f)
+		}
+	}
+	return out, int64(len(out)), nil
+}
+
+func (m *memRepo) ReadPermissions(context.Context) ([]string, error) {
+	var out []string
+	for _, f := range m.rows {
+		if f.ReadPermission != "" && !slices.Contains(out, f.ReadPermission) {
+			out = append(out, f.ReadPermission)
+		}
+	}
+	return out, nil
+}
+
+func (m *memRepo) SystemKnownKeys(_ context.Context, keys []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	for _, f := range m.rows {
+		if slices.Contains(keys, f.Key) {
+			out[f.Key] = true
+		}
+	}
+	return out, nil
 }
 
 func (m *memRepo) SystemPurgeCandidates(_ context.Context, before time.Time) ([]application.Purgeable, error) {
@@ -177,5 +204,90 @@ func TestALockedFileCannotBeDeleted(t *testing.T) {
 	}
 	if got, _ := svc.Get(context.Background(), f.ID); !got.Locked {
 		t.Fatal("the file does not say it is locked")
+	}
+}
+
+// holds is a viewer holding exactly these permissions.
+type holds []string
+
+func (h holds) Can(_ context.Context, p string) bool { return slices.Contains(h, p) }
+
+func TestTheAdministrationPageShowsOnlyWhatItsViewerMayRead(t *testing.T) {
+	svc, _, _ := setup(t)
+	ctx := context.Background()
+	save := func(owner, perm string) contracts.File {
+		f, err := svc.Save(ctx, contracts.Upload{Owner: owner, ReadPermission: perm, Name: "a.png", Reader: bytes.NewReader(png)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	ktp := save("visitor-log", "")               // personal data: only through its module
+	receipt := save("expenses", "expenses.read") // readable by holders of expenses.read
+	page := pagination.Params{Page: 1, Limit: 10}
+	if _, n, _ := svc.AdminList(ctx, holds{"files.read"}, "", "", page); n != 0 {
+		t.Fatalf("files.read alone lists %d files of other modules", n)
+	}
+	if _, _, err := svc.AdminOpen(ctx, holds{"files.read"}, ktp.ID); !errors.Is(err, contracts.ErrNotFound) {
+		t.Fatalf("an ID scan opened on the administration page: %v", err)
+	}
+	if err := svc.AdminDelete(ctx, holds{"files.read", "files.manage"}, ktp.ID); !errors.Is(err, contracts.ErrNotFound) {
+		t.Fatalf("another module's file deleted from the administration page: %v", err)
+	}
+	got, n, _ := svc.AdminList(ctx, holds{"files.read", "expenses.read"}, "", "", page)
+	if n != 1 || got[0].ID != receipt.ID {
+		t.Fatalf("a holder of expenses.read lists %d: %+v", n, got)
+	}
+	if _, rc, err := svc.AdminOpen(ctx, holds{"expenses.read"}, receipt.ID); err != nil {
+		t.Fatalf("the receipt did not open for a holder of its read permission: %v", err)
+	} else {
+		rc.Close()
+	}
+	if _, err := svc.Save(ctx, contracts.Upload{Owner: "expenses", ReadPermission: "not a permission", Name: "a.png", Reader: bytes.NewReader(png)}); err == nil {
+		t.Fatal("a malformed read permission was accepted")
+	}
+}
+
+func TestStoredNamesMatchTheirContent(t *testing.T) {
+	svc, _, _ := setup(t)
+	f, err := svc.Save(context.Background(), contracts.Upload{Owner: "sales", Name: "faktur.html", Reader: strings.NewReader("%PDF-1.7\n%…\n")})
+	if err != nil || f.Name != "faktur.pdf" {
+		t.Fatalf("a PDF named .html is stored as %q (%v)", f.Name, err)
+	}
+}
+
+func TestTheSweepRemovesOnlyBytesNoRowRefersTo(t *testing.T) {
+	svc, _, root := setup(t)
+	kept, err := svc.Save(context.Background(), contracts.Upload{Owner: "settings", Name: "logo.png", Reader: bytes.NewReader(png)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Bytes whose row was rolled back with the caller's transaction, and one written just now.
+	disk := infrastructure.Disk{Root: root}
+	orphan, _, _, err := disk.Write(context.Background(), bytes.NewReader(png), 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, _, _, _ := disk.Write(context.Background(), bytes.NewReader(png), 1<<20)
+	old := time.Now().Add(-48 * time.Hour)
+	for _, p := range filesUnder(t, root) {
+		if !strings.HasSuffix(filepath.ToSlash(p), fresh) {
+			_ = os.Chtimes(p, old, old)
+		}
+	}
+	if err := svc.SweepOrphans(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	left := strings.Join(filesUnder(t, root), "\n")
+	if strings.Contains(left, filepath.FromSlash(orphan)) {
+		t.Fatal("unreferenced bytes older than a day were kept")
+	}
+	if !strings.Contains(left, filepath.FromSlash(fresh)) {
+		t.Fatal("bytes younger than a day were removed — their row may still be committing")
+	}
+	if _, rc, err := svc.Open(context.Background(), kept.ID); err != nil {
+		t.Fatalf("a referenced file lost its bytes: %v", err)
+	} else {
+		rc.Close()
 	}
 }

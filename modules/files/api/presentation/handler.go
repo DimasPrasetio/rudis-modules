@@ -1,5 +1,6 @@
-// Package presentation is the files module's HTTP API: an administrator's view of every stored
-// file. A module serves its own files through its own endpoints.
+// Package presentation is the files module's HTTP API: an administrator's view of the stored
+// files its viewer may read — the module's own, and those whose owner module named a read
+// permission the viewer holds. A module serves its own files through its own endpoints.
 package presentation
 
 import (
@@ -68,7 +69,7 @@ func notFound(err error) error {
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	p := pagination.FromRequest(r)
 	q := r.URL.Query()
-	files, total, err := h.svc.List(r.Context(), q.Get("owner"), strings.TrimSpace(q.Get("q")), p)
+	files, total, err := h.svc.AdminList(r.Context(), h.authz, q.Get("owner"), strings.TrimSpace(q.Get("q")), p)
 	if err != nil {
 		response.Error(w, r, err)
 		return
@@ -87,7 +88,7 @@ func (h *Handler) download(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, err)
 		return
 	}
-	f, rc, err := h.svc.Open(r.Context(), id)
+	f, rc, err := h.svc.AdminOpen(r.Context(), h.authz, id)
 	if err != nil {
 		response.Error(w, r, notFound(err))
 		return
@@ -108,7 +109,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, err)
 		return
 	}
-	if err := h.svc.Delete(r.Context(), id); err != nil {
+	if err := h.svc.AdminDelete(r.Context(), h.authz, id); err != nil {
 		response.Error(w, r, notFound(err))
 		return
 	}
