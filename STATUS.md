@@ -126,6 +126,12 @@ fixed; add one when you accept a limit.
 Newest first. One entry per change that released something or changed how the library works:
 date, what, the tags it created.
 
+- **28 Oct 2026 — ROADMAP.md: one rule, one kit, for Indonesian rules (89 modules).**
+  - `idtax` became `taxrules` and now holds every tax rate and calculation, PPh 21 (TER, PTKP,
+    Pasal 17) included; `idpayroll` became `payrollrules` with employment rules only (BPJS,
+    overtime, THR, severance); new kit `coretax` holds the DJP XML format. A boundary table names
+    what `taxid`, `taxrules`, `payrollrules`, and `coretax` each own.
+
 - **28 Oct 2026 — Gelombang 0: fixes from the audit of the first 21 modules.**
   - Released: `auth` 0.8.0, `users` 0.8.0, `settings` 0.3.1, `audit-log` 0.3.0, `mailer` 0.3.0,
     `files` 0.3.0, `taxid` 0.2.0, `customers` 0.2.0, `suppliers` 0.2.0, `ui-core` 0.5.0,

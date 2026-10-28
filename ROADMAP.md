@@ -1,6 +1,6 @@
 # Roadmap modul rudis-modules
 
-Acuan pengembangan pustaka: **88 modul baru** yang akan dibangun, di luar 21 modul dan 1 preset
+Acuan pengembangan pustaka: **89 modul baru** yang akan dibangun, di luar 21 modul dan 1 preset
 yang sudah rilis. Tujuannya memperkaya modul reusable agar aplikasi apa pun yang diminta pengguna
 nanti — ERP, HRMIS, gudang, POS, buku tamu, booking, helpdesk, website, sekolah, klinik — bisa
 dirakit dari modul yang sudah ada, dan Rudis-SDD hanya membuat bagian yang benar-benar khusus
@@ -65,6 +65,23 @@ dalam satu kit tanpa tabel).
 Jangan memecah lebih halus dari *fitur yang wajar dipakai terpisah*: setiap pecahan menambah port
 dan adaptor yang harus dirakit di setiap proyek.
 
+## Batas kit aturan Indonesia
+
+Satu aturan tinggal di **satu** kit. Modul yang butuh aturan itu memakai kitnya; tidak ada tarif,
+tabel, atau format resmi yang ditulis ulang di modul atau di kit lain.
+
+| Kit | Menjawab | Isi | Berubah karena | Tidak memuat |
+|---|---|---|---|---|
+| `taxid` ✅ | **Siapa** — apakah nomor identitas ini sah formatnya? | NPWP 16 digit, NIK, NITKU, paspor, Other ID, penyamaran, pencarian aman | struktur nomor (jarang) | tarif, perhitungan, format XML |
+| `taxrules` | **Berapa pajaknya?** | PPN & DPP, PPh 4(2)/15/22/23, PPh 21 (TER, PTKP, Pasal 17), PPh final pesangon, bea meterai | PMK/PP tarif (sering) | identitas, iuran BPJS, format XML |
+| `payrollrules` | **Berapa hak & kewajiban ketenagakerjaannya?** | iuran BPJS & batas upah, upah lembur, THR, pesangon/UPMK/UPH, UMK | PP/Permenaker, ketetapan BPJS, UMK tahunan | pajak apa pun (PPh 21 milik `taxrules`) |
+| `coretax` | **Bagaimana menyerahkannya ke DJP?** | XML faktur & bukti potong, kode transaksi, aturan ID TKU | versi templat Coretax | tarif (dipakai dari `taxrules`), validasi identitas (dari `taxid`) |
+
+Pemakaian: `invoicing`, `purchasing`, `pos` → `taxrules`; `efaktur`, `ebupot` → `taxrules` +
+`coretax` + `taxid`; `payroll` → `taxrules` + `payrollrules`; `overtime` → `payrollrules`;
+`offboarding` → `payrollrules` + `taxrules`. Kit boleh memakai kit lain (`gokit-pure`), tidak
+pernah modul.
+
 ## Syarat wajib setiap modul — pelajaran audit 28 Oktober 2026
 
 Audit 21 modul pertama (fungsional, UI/UX, arsitektur) menemukan kesalahan yang mudah terulang.
@@ -115,7 +132,7 @@ rilis memeriksanya.
 ### D. Regulasi Indonesia
 
 16. Aturan pajak, BPJS, upah, kode wilayah, hari libur **disimpan sebagai data bertanggal
-    berlaku** di kit (`idtax`, `idpayroll`, `taxid`), dicek ke **teks resmi** (pajak.go.id,
+    berlaku** di kit (`taxrules`, `payrollrules`, `coretax`, `taxid`), dicek ke **teks resmi** (pajak.go.id,
     peraturan.bpk.go.id, JDIH) dan diberi sumber di README.
 17. Validasi identitas lewat kit `taxid` (NPWP 16 digit, NIK-sebagai-NPWP, NITKU 22 digit,
     jenis "Other ID"), tidak ditulis ulang di modul.
@@ -196,7 +213,7 @@ modulnya ditulis.
 | ✅ 0.1.2 | `ui-gallery` | web | galeri komponen kit |
 | ✅ 0.1.2 | `bingkai-navy` | preset | tema back-office |
 
-## Ringkasan 88 modul baru
+## Ringkasan 89 modul baru
 
 | Gelombang | Fokus | Jumlah | Selesai |
 |---|---|---|---|
@@ -206,10 +223,10 @@ modulnya ditulis.
 | 3 | Layanan, kantor & publik | 11 | 0 |
 | 4 | Penjualan & pembelian | 8 | 0 |
 | 5 | Gudang, POS & toko | 17 | 0 |
-| 6 | Keuangan & pajak | 8 | 0 |
+| 6 | Keuangan & pajak | 9 | 0 |
 | 7 | SDM | 10 | 0 |
 | 8 | Vertikal & lanjutan | 10 | 0 |
-| | **Total** | **88** | **0** |
+| | **Total** | **89** | **0** |
 
 Gelombang mengikuti arah port: modul di gelombang N hanya memakai port yang penyedianya ada di
 gelombang yang sama atau sebelumnya (atau modul yang sudah ada). Gelombang 3 sengaja sebelum ERP:
@@ -239,7 +256,7 @@ untuk setiap modul berikutnya. Kolom *Syarat wajib* menunjuk kelompok dan nomor 
 | 0.10 | ✅ | Fokus keyboard ≥3:1 di semua kontrol (cincin `--ring` 4,3–6,8:1), opsi pilihan terlihat saat fokus, tanpa tombol bersarang, FileDropzone, `autocomplete`, skip link, judul per halaman, `aria-current`, reduced-motion | `ui-core` 0.5.0, `ui-forms` 0.3.0, `ui-data` 0.2.1, `app-shell` 0.6.0, `ui-gallery` 0.1.2, `bingkai-navy` 0.1.2 | F23 |
 | 0.11 | ⬜ P1 — sebelum `approvals` (#13) | Peran per perusahaan atau templat peran; audit pemberian admin saat start; peran dicatat `security` di dalam transaksi; kontrak `RoleHolders` | `rbac` | B9, E19 |
 | 0.12 | ⬜ P1 — sebelum `approvals` (#13) | Penempatan dicabut → peran di perusahaan itu ikut dicabut (event organization, didengar rbac) | `organization`, `rbac` | E20 |
-| 0.13 | ⬜ P1 — sebelum `search` (#87), `crm` (#32) | Event siklus hidup data master (`customers`, `suppliers`, `users`) | `customers`, `suppliers`, `users` | E18 |
+| 0.13 | ⬜ P1 — sebelum `search` (#88), `crm` (#32) | Event siklus hidup data master (`customers`, `suppliers`, `users`) | `customers`, `suppliers`, `users` | E18 |
 | 0.14 | ⬜ P1 — sebelum gelombang 2 | `ErrorSummary` + penjaga perubahan belum disimpan; `DatePicker` id-ID + rentang dengan preset + `PeriodPicker`; toast dengan Urungkan; banner | `ui-forms`, `ui-feedback` | F23, F24 |
 | 0.15 | ⬜ P1 — sebelum gelombang 2 | Tabel: identitas baris sebagai tautan, state tanpa menghilangkan header, tata letak HP, header mengikuti density, pilih semua lintas halaman, pengumuman jumlah terpilih | `ui-data` | F25 |
 | 0.16 | ⬜ P1 — sebelum gelombang 2 | Breadcrumb yang bisa kembali ke daftar (API crumbs); tanggal mengikuti zona perusahaan/cabang | `app-shell`, `ui-core` | F23 |
@@ -308,13 +325,13 @@ Modul siap pakai untuk kantor, sekolah, klinik, komunitas, dan usaha jasa.
 
 | # | Status | Modul | Jenis | Fungsi | Port wajib | Port opsional · kontrak · event | Catatan | Rujukan |
 |---|---|---|---|---|---|---|---|---|
-| 36 | ⬜ | `idtax` | gokit | Aturan pajak Indonesia bertanggal berlaku: PPN (12% × DPP 11/12), tarif PPh 4(2)/15/22/23, bea meterai, pembangun XML Coretax | — | — | PMK 131/2024 [V]; PPh 23 & meterai Rp10.000 di atas Rp5 juta [S] | S21, S22 |
+| 36 | ⬜ | `taxrules` | gokit | Semua tarif & perhitungan pajak Indonesia, bertanggal berlaku: PPN (12% × DPP 11/12, kode transaksi), PPh 4(2)/15/22/23 (tarif lebih tinggi tanpa NPWP), PPh 21 (kategori TER A/B/C & tabelnya, PTKP, biaya jabatan, hitung tahunan Pasal 17 untuk Desember/bulan keluar), PPh final pesangon, bea meterai | — | kit `money` | PMK 131/2024 [V]; PMK 168/2023 kategori TER A/B/C [V]; PPh 23 & meterai Rp10.000 di atas Rp5 juta [S]; tabel TER lengkap & PPh final pesangon (PP 68/2009) [U] | S21, S24 |
 | 37 | ⬜ | `items` | fullstack | Produk & jasa: varian, kategori, satuan & konversi, SKU/barcode, gambar, kode barang/jasa Coretax | — | `FileStore`, `DocNumbers` (→ numbering); kontrak `ItemCatalog` · emits `items.item.changed` / `archived` | Kode barang wajib di faktur (PER-11/PJ/2025) [S] | S7, S9, S35 |
 | 38 | ⬜ | `pricing` | fullstack | Daftar harga per cabang/kanal/kelompok pelanggan, harga bertingkat per jumlah, harga terjadwal, harga pokok vs jual | `ItemCatalog` | `CustomerDirectory`; kontrak `PriceResolver` · emits `pricing.list.changed` | | S9 |
 | 39 | ⬜ | `promotions` | fullstack | Promo (%, Rp, beli X gratis Y, bundel, minimum belanja, happy hour) dan voucher/kupon berbatas pemakaian | `ItemCatalog` | `CustomerDirectory`, `LoyaltyTier`; kontrak `PromotionEngine` · emits `promotions.voucher.redeemed` | | S9, S14 |
 | 40 | ⬜ | `sales` | fullstack | Penawaran, pesanan penjualan, pengiriman (surat jalan), retur | `CustomerDirectory`, `ItemCatalog` | `PriceResolver`, `PromotionEngine`, `StockReservation`, `Approvals`, `DocNumbers`, `PeriodLock`; kontrak `OrderIntake`, `OrderFulfilment` · emits `sales.order.confirmed`, `sales.delivery.confirmed` | | S1, S2, S7 |
-| 41 | ⬜ | `purchasing` | fullstack | Permintaan pembelian, RFQ, PO, penerimaan barang (lot & kedaluwarsa), tagihan pemasok, retur, saran pemesanan ulang | `SupplierDirectory` (→ suppliers), `ItemCatalog` | `Approvals`, `BudgetCheck`, `DocNumbers`, `PeriodLock`; kontrak `PurchaseDocuments` · emits `purchasing.receipt.confirmed`, `purchasing.bill.posted` | PPN masukan, PPh 23 jasa | S1, S41 |
-| 42 | ⬜ | `invoicing` | fullstack | Faktur penjualan, nota kredit, faktur uang muka, baris PPN, penanda meterai, cetak PDF | `CustomerDirectory` | `ItemCatalog`, `DocNumbers`, `PeriodLock`; kontrak `InvoiceSource` · kit `idtax`, `pdfdoc` · emits `invoicing.invoice.posted` / `cancelled` | | S1, S8 |
+| 41 | ⬜ | `purchasing` | fullstack | Permintaan pembelian, RFQ, PO, penerimaan barang (lot & kedaluwarsa), tagihan pemasok, retur, saran pemesanan ulang | `SupplierDirectory` (→ suppliers), `ItemCatalog` | `Approvals`, `BudgetCheck`, `DocNumbers`, `PeriodLock`; kontrak `PurchaseDocuments` · kit `taxrules` · emits `purchasing.receipt.confirmed`, `purchasing.bill.posted` | PPN masukan, PPh 23 jasa | S1, S41 |
+| 42 | ⬜ | `invoicing` | fullstack | Faktur penjualan, nota kredit, faktur uang muka, baris PPN, penanda meterai, cetak PDF | `CustomerDirectory` | `ItemCatalog`, `DocNumbers`, `PeriodLock`; kontrak `InvoiceSource` · kit `taxrules`, `pdfdoc` · emits `invoicing.invoice.posted` / `cancelled` | | S1, S8 |
 | 43 | ⬜ | `settlements` | fullstack | Penerimaan & pembayaran piutang/hutang, alokasi ke faktur/tagihan, umur piutang/hutang, termin pembayaran (net-N, cicilan) | `OpenDocuments` (→ invoicing, purchasing) | `CashAccounts`, `PaymentGateway`; kontrak `PaymentTerms` · emits `settlements.payment.received` / `made` | | S2, S7 |
 
 ## Gelombang 5 — Gudang, POS & toko
@@ -328,7 +345,7 @@ Modul siap pakai untuk kantor, sekolah, klinik, komunitas, dan usaha jasa.
 | 48 | ⬜ | `stock-transfer` | fullstack | Transfer antar gudang/cabang dengan status dalam perjalanan, terima sebagian, selisih, penyesuaian & barang rusak | `StockLedger` | `Approvals`, `DocNumbers` · emits `stock-transfer.transfer.shipped` / `received` | Toko satu gudang tidak perlu memasangnya | S9, S10 |
 | 49 | ⬜ | `stock-count` | fullstack | Stok opname (penuh/siklus/buta), scan, impor Excel, tinjau selisih, posting penyesuaian | `StockLedger` | menyumbang target impor ke `data-io` · kit `ui-scan` · emits `stock-count.count.posted` | | S9, S12 |
 | 50 | ⬜ | `wms` | fullstack | Saran putaway, daftar ambil (per pesanan/SKU/rak; batch/zona), packing, ambil FEFO, isi ulang rak, layar scanner | `StockLedger` | `OrderFulfilment` (→ sales), `ShipmentBooking` (→ shipping) · kit `ui-scan` · emits `wms.order.packed` | | S10 |
-| 51 | ⬜ | `pos` | fullstack | Kasir: perangkat, shift (modal awal, kas masuk/keluar, hitung tutup, selisih), transaksi, multi/split pembayaran (tunai, QRIS, kartu), void/refund, struk, sinkron offline | `ItemCatalog` | `PriceResolver`, `PromotionEngine`, `StockLedger`, `PaymentGateway`, `LoyaltyLedger`, `WalletTender`, `CustomerDirectory`; kontrak `PosSales` · kit `offline-sync`, `ui-print`, `ui-scan`, `ui-offline` · emits `pos.sale.completed` / `voided`, `pos.shift.closed` | QRIS wajib ada; MDR tidak dibebankan ke konsumen [V] | S9, S15, S36 |
+| 51 | ⬜ | `pos` | fullstack | Kasir: perangkat, shift (modal awal, kas masuk/keluar, hitung tutup, selisih), transaksi, multi/split pembayaran (tunai, QRIS, kartu), void/refund, struk, sinkron offline | `ItemCatalog` | `PriceResolver`, `PromotionEngine`, `StockLedger`, `PaymentGateway`, `LoyaltyLedger`, `WalletTender`, `CustomerDirectory`; kontrak `PosSales` · kit `taxrules`, `offline-sync`, `ui-print`, `ui-scan`, `ui-offline` · emits `pos.sale.completed` / `voided`, `pos.shift.closed` | QRIS wajib ada; MDR tidak dibebankan ke konsumen [V] | S9, S15, S36 |
 | 52 | ⬜ | `pos-fnb` | fullstack | Restoran: denah meja, open bill, gabung/pisah meja & bill, dine-in/takeaway/delivery, self-order QR meja | `PosSales` (→ pos), `ItemCatalog` | · kit `barcode` · emits `pos-fnb.bill.sent-to-kitchen` | Service charge & PBJT restoran [U] | S9, S11 |
 | 53 | ⬜ | `kitchen-display` | fullstack | Layar dapur: stasiun per kategori, status per item, bump, layar status pesanan pelanggan, cetak tiket dapur | `ItemCatalog` | listens `pos-fnb.bill.sent-to-kitchen`, `sales.order.confirmed` · kit `ui-live`, `ui-print` · emits `kitchen-display.item.prepared` | Juga untuk pesanan online | S9, S11 |
 | 54 | ⬜ | `loyalty` | fullstack | Member, poin (dapat & tukar), tingkat, kedaluwarsa, hadiah (% / Rp / produk gratis) | `CustomerDirectory` | `ItemCatalog`; kontrak `LoyaltyLedger`, `LoyaltyTier` · listens `pos.sale.completed` · emits `loyalty.points.earned` / `redeemed` | | S9, S14 |
@@ -348,44 +365,45 @@ Modul siap pakai untuk kantor, sekolah, klinik, komunitas, dan usaha jasa.
 | 63 | ⬜ | `budgets` | fullstack | Anggaran per akun/pusat biaya/proyek & periode, realisasi vs anggaran, pengecekan anggaran | — | `ActualsSource` (→ ledger); kontrak `BudgetCheck` | | S6, S41 |
 | 64 | ⬜ | `expenses` | fullstack | Biaya perusahaan, klaim reimburse karyawan dengan bukti, uang muka & pertanggungjawabannya | `FileStore` | `EmployeeDirectory`, `Approvals`; kontrak `ClaimsPayable` · emits `expenses.claim.approved` | | S1, S3, S4 |
 | 65 | ⬜ | `fixed-assets` | fullstack | Aset tetap akuntansi: buku penyusutan komersial & fiskal, penyusutan bulanan, revaluasi, pelepasan | — | `AssetRegister` (→ assets), `Posting` · emits `fixed-assets.depreciation.posted` | Kelompok 1–4 masa manfaat 4/8/16/20 tahun (PMK 72/2023) [V] | S13, S27 |
-| 66 | ⬜ | `efaktur` | fullstack | Register faktur keluaran & masukan, impor/ekspor XML Coretax, status persetujuan, retur/batal | `InvoiceSource` (→ invoicing, purchasing), `CompanyTaxIdentity` (→ settings) | `CounterpartyTaxId` (→ customers, suppliers) · kit `idtax` · emits `efaktur.faktur.approved` | Nomor otomatis dari Coretax; unggah paling lambat tgl 20 bulan berikutnya [S] | S22 |
-| 67 | ⬜ | `ebupot` | fullstack | Register bukti potong & ekspor XML Coretax: BPPU (PPh 4(2)/15/22/23), BPMP (TER bulanan), BP21, BPA1 | — | `WithholdingSource` (→ purchasing, payroll), `EmployeeDirectory` · kit `idtax` | BPA1 butuh NIK tervalidasi [S] | S23 |
-| 68 | ⬜ | `emeterai` | fullstack | Deteksi dokumen wajib meterai, ledger meterai, pembubuhan lewat distributor resmi | `StampProvider` (adaptor distributor Peruri), `FileStore` | `InvoiceSource` · emits `emeterai.document.stamped` | Rp10.000 untuk nilai di atas Rp5 juta (UU 10/2020) [S] | S7, S8 |
+| 66 | ⬜ | `coretax` | gokit | Format Coretax DJP: membangun & membaca XML impor faktur pajak dan bukti potong (BPPU, BPMP, BP21, BPA1), kode transaksi, aturan ID TKU per jenis identitas, versi templat bertanggal berlaku | — | kit `taxid`, `taxrules`, `money` | XML menggantikan CSV di Coretax [S]; panjang ID TKU untuk pembeli non-TIN belum pasti [U] | S22, S23 |
+| 67 | ⬜ | `efaktur` | fullstack | Register faktur keluaran & masukan, impor/ekspor XML Coretax, status persetujuan, retur/batal | `InvoiceSource` (→ invoicing, purchasing), `CompanyTaxIdentity` (→ settings) | `CounterpartyTaxId` (→ customers, suppliers) · kit `taxrules`, `coretax`, `taxid` · emits `efaktur.faktur.approved` | Nomor otomatis dari Coretax; unggah paling lambat tgl 20 bulan berikutnya [S] | S22 |
+| 68 | ⬜ | `ebupot` | fullstack | Register bukti potong & ekspor XML Coretax: BPPU (PPh 4(2)/15/22/23), BPMP (TER bulanan), BP21, BPA1 | — | `WithholdingSource` (→ purchasing, payroll), `EmployeeDirectory` · kit `taxrules`, `coretax`, `taxid` | BPA1 butuh NIK tervalidasi [S] | S23 |
+| 69 | ⬜ | `emeterai` | fullstack | Deteksi dokumen wajib meterai, ledger meterai, pembubuhan lewat distributor resmi | `StampProvider` (adaptor distributor Peruri), `FileStore` | `InvoiceSource` · emits `emeterai.document.stamped` | Rp10.000 untuk nilai di atas Rp5 juta (UU 10/2020) [S] | S7, S8 |
 
 ## Gelombang 7 — SDM
 
 | # | Status | Modul | Jenis | Fungsi | Port wajib | Port opsional · kontrak · event | Catatan | Rujukan |
 |---|---|---|---|---|---|---|---|---|
-| 69 | ⬜ | `idpayroll` | gokit | Aturan penggajian bertanggal berlaku: kategori TER A/B/C & tabelnya, PTKP, hitung tahunan Desember/bulan keluar (Pasal 17), iuran & batas BPJS, upah lembur 1/173, THR proporsional, pesangon PP 35/2021 | — | — | TER A/B/C [V]; iuran BPJS TK & batas JP [V]; BPJS Kesehatan 4%+1% batas Rp12 juta [S]; tabel pesangon [U] | S24, S25, S26 |
-| 70 | ⬜ | `employees` | fullstack | Data karyawan, unit & jabatan, grade, kontrak PKWT/PKWTT, atasan langsung, NIK/NPWP/PTKP/BPJS/rekening terenkripsi, profil mandiri | — | `Units` (→ organization), `UserAccounts` (→ users), `FileStore`; kontrak `EmployeeDirectory` · kit `taxid`, `fieldcrypt` · emits `employees.employee.hired` / `terminated` | Lingkup "atasan melihat timnya" perlu desain lingkup data (rbac/kernel) | S3, S4, S5 |
-| 71 | ⬜ | `attendance` | fullstack | Absen masuk/pulang (GPS geofence, selfie), shift & jadwal, rekap, koreksi absen | `EmployeeDirectory` | `WorkCalendar`, `Approvals`, `FileStore`; kontrak `AttendanceSummary`, `AttendanceHours` · kit `geo` · emits `attendance.period.closed` | | S4, S5 |
-| 72 | ⬜ | `overtime` | fullstack | Pengajuan & persetujuan lembur, jam aktual, hitung upah lembur | `EmployeeDirectory` | `AttendanceHours`, `WorkCalendar`, `Approvals`; kontrak `OvertimeHours` · kit `idpayroll` · emits `overtime.request.approved` | Maks. 4 jam/hari, 18 jam/minggu (PP 35/2021) [S] | S26, S37 |
-| 73 | ⬜ | `leave` | fullstack | Jenis cuti, akrual, saldo, pengajuan, sisa dibawa ke tahun berikutnya, kalender tim | `EmployeeDirectory` | `WorkCalendar`, `Approvals`, `FileStore` (surat dokter); kontrak `LeaveSummary`, `LeaveBalance` · emits `leave.request.approved` | Cuti tahunan min. 12 hari setelah 12 bulan kerja [S] | S1, S4, S38 |
-| 74 | ⬜ | `payroll` | fullstack | Komponen & struktur gaji, periode gaji terkunci, PPh 21 TER, BPJS, THR, slip gaji PDF terenkripsi, file transfer bank, ekspor jurnal | `EmployeeDirectory` | `AttendanceSummary`, `OvertimeHours`, `LeaveSummary`, `ClaimsPayable`, `LoanDeductions`, `PeriodLock`, `Posting`; kontrak `PayrollResults` · kit `idpayroll`, `money`, `fieldcrypt`, `pdfdoc` · emits `payroll.run.closed` | THR paling lambat 7 hari sebelum hari raya [S] | S3, S4, S5, S24 |
-| 75 | ⬜ | `employee-loans` | fullstack | Kasbon & pinjaman karyawan dengan jadwal cicilan potong gaji | `EmployeeDirectory` | `Approvals`; kontrak `LoanDeductions` · listens `payroll.run.closed` · emits `employee-loans.loan.disbursed` | | S4, S5 |
-| 76 | ⬜ | `recruitment` | fullstack | Lowongan, pelamar, tahapan seleksi, jadwal wawancara, penawaran kerja | — | `FormSource`, `Notifier`, `EmployeeOnboarding` (→ employees) · emits `recruitment.candidate.hired` | | S1, S4 |
-| 77 | ⬜ | `performance` | fullstack | KPI, siklus penilaian, penilaian atasan & 360, rencana pengembangan | `EmployeeDirectory` | `Approvals` · emits `performance.review.completed` | | S1, S4, S5 |
-| 78 | ⬜ | `offboarding` | fullstack | Resign/PHK, checklist keluar, pengembalian aset, hitung pesangon & uang pisah | `EmployeeDirectory` | `LeaveBalance`, `AssetReturn` (→ assets) · kit `idpayroll` · emits `offboarding.exit.completed` | PP 35/2021 Pasal 40 dst. [V ada; tabel U] | S26 |
+| 70 | ⬜ | `payrollrules` | gokit | Aturan ketenagakerjaan bertanggal berlaku: iuran & batas upah BPJS Kesehatan dan Ketenagakerjaan (JHT, JKK, JKM, JP, JKP), upah lembur 1/173 dan pengalinya, THR proporsional, pesangon/UPMK/UPH PP 35/2021, UMK sebagai data | — | kit `money` | Iuran BPJS TK & batas JP [V]; BPJS Kesehatan 4%+1% batas Rp12 juta [S]; tabel pesangon & tarif JKP [U] | S25, S26, S37 |
+| 71 | ⬜ | `employees` | fullstack | Data karyawan, unit & jabatan, grade, kontrak PKWT/PKWTT, atasan langsung, NIK/NPWP/PTKP/BPJS/rekening terenkripsi, profil mandiri | — | `Units` (→ organization), `UserAccounts` (→ users), `FileStore`; kontrak `EmployeeDirectory` · kit `taxid`, `fieldcrypt` · emits `employees.employee.hired` / `terminated` | Lingkup "atasan melihat timnya" perlu desain lingkup data (rbac/kernel) | S3, S4, S5 |
+| 72 | ⬜ | `attendance` | fullstack | Absen masuk/pulang (GPS geofence, selfie), shift & jadwal, rekap, koreksi absen | `EmployeeDirectory` | `WorkCalendar`, `Approvals`, `FileStore`; kontrak `AttendanceSummary`, `AttendanceHours` · kit `geo` · emits `attendance.period.closed` | | S4, S5 |
+| 73 | ⬜ | `overtime` | fullstack | Pengajuan & persetujuan lembur, jam aktual, hitung upah lembur | `EmployeeDirectory` | `AttendanceHours`, `WorkCalendar`, `Approvals`; kontrak `OvertimeHours` · kit `payrollrules` · emits `overtime.request.approved` | Maks. 4 jam/hari, 18 jam/minggu (PP 35/2021) [S] | S26, S37 |
+| 74 | ⬜ | `leave` | fullstack | Jenis cuti, akrual, saldo, pengajuan, sisa dibawa ke tahun berikutnya, kalender tim | `EmployeeDirectory` | `WorkCalendar`, `Approvals`, `FileStore` (surat dokter); kontrak `LeaveSummary`, `LeaveBalance` · emits `leave.request.approved` | Cuti tahunan min. 12 hari setelah 12 bulan kerja [S] | S1, S4, S38 |
+| 75 | ⬜ | `payroll` | fullstack | Komponen & struktur gaji, periode gaji terkunci, PPh 21 TER, BPJS, THR, slip gaji PDF terenkripsi, file transfer bank, ekspor jurnal | `EmployeeDirectory` | `AttendanceSummary`, `OvertimeHours`, `LeaveSummary`, `ClaimsPayable`, `LoanDeductions`, `PeriodLock`, `Posting`; kontrak `PayrollResults` · kit `taxrules`, `payrollrules`, `money`, `fieldcrypt`, `pdfdoc` · emits `payroll.run.closed` | THR paling lambat 7 hari sebelum hari raya [S] | S3, S4, S5, S24 |
+| 76 | ⬜ | `employee-loans` | fullstack | Kasbon & pinjaman karyawan dengan jadwal cicilan potong gaji | `EmployeeDirectory` | `Approvals`; kontrak `LoanDeductions` · listens `payroll.run.closed` · emits `employee-loans.loan.disbursed` | | S4, S5 |
+| 77 | ⬜ | `recruitment` | fullstack | Lowongan, pelamar, tahapan seleksi, jadwal wawancara, penawaran kerja | — | `FormSource`, `Notifier`, `EmployeeOnboarding` (→ employees) · emits `recruitment.candidate.hired` | | S1, S4 |
+| 78 | ⬜ | `performance` | fullstack | KPI, siklus penilaian, penilaian atasan & 360, rencana pengembangan | `EmployeeDirectory` | `Approvals` · emits `performance.review.completed` | | S1, S4, S5 |
+| 79 | ⬜ | `offboarding` | fullstack | Resign/PHK, checklist keluar, pengembalian aset, hitung pesangon & uang pisah | `EmployeeDirectory` | `LeaveBalance`, `AssetReturn` (→ assets) · kit `payrollrules`, `taxrules` · emits `offboarding.exit.completed` | PP 35/2021 Pasal 40 dst. [V ada; tabel U] | S26 |
 
 ## Gelombang 8 — Vertikal & lanjutan
 
 | # | Status | Modul | Jenis | Fungsi | Port wajib | Port opsional · kontrak · event | Catatan | Rujukan |
 |---|---|---|---|---|---|---|---|---|
-| 79 | ⬜ | `school` | fullstack | Peserta didik, rombel, mapel, guru, tahun ajaran & semester, absensi siswa, nilai & rapor PDF, kontak orang tua | — | `Notifier`, `FormSource` (PPDB) · kit `pdfdoc` · emits `school.attendance.recorded` | Adaptor impor Dapodik (web service) [V ada; rincian S] | S40 |
-| 80 | ⬜ | `clinic` | fullstack | Pasien (NIK, BPJS), pendaftaran & kunjungan, rekam medis SOAP, diagnosis ICD-10, resep, tenaga medis | — | `QueueSource`, `BookingSource` · kit `fieldcrypt` · emits `clinic.encounter.closed` | Adaptor SATUSEHAT: OAuth2, satu client per Organization [V]; PMK 24/2022 [V] | S39 |
-| 81 | ⬜ | `koperasi` | fullstack | Anggota, simpanan pokok/wajib/sukarela, pinjaman & cicilan, SHU | — | `PaymentGateway`, `Approvals`, `Posting` · emits `koperasi.loan.disbursed` | Batas Permenkop 8/2023 & pelaporan PPATK [S] | — |
-| 82 | ⬜ | `rental` | fullstack | Sewa barang/alat: kalender ketersediaan, harga per waktu, deposit, ambil & kembali dengan kondisi, denda telat | — | `RentableSource` (→ items, assets), `PaymentGateway`, `WalletTender` · emits `rental.order.returned` | | S1 |
-| 83 | ⬜ | `property-rent` | fullstack | Properti/kos: unit & kamar, penyewa (KTP terenkripsi), kontrak, tagihan bulanan, deposit, permintaan perbaikan | — | `PaymentGateway`, `Notifier`, `TicketSink` (→ helpdesk) · kit `fieldcrypt` · emits `property-rent.bill.issued` | | S1 |
-| 84 | ⬜ | `projects` | fullstack | Proyek, tugas, papan kanban, timesheet, biaya proyek | — | `EmployeeDirectory`, `CustomerDirectory`, `BudgetCheck` · emits `projects.task.completed` | | S1, S2 |
-| 85 | ⬜ | `fleet` | fullstack | Kendaraan, pengemudi, masa berlaku STNK/KIR/asuransi, odometer, BBM, jadwal servis | — | `AssetRegister`, `EmployeeDirectory`, `Notifier` · emits `fleet.document.expiry-flagged` | | S1 |
-| 86 | ⬜ | `donations` | fullstack | Kampanye, donatur, donasi, kuitansi PDF, halaman progres, ekspor laporan | — | `PaymentGateway`, `ContentSource` (→ cms) · kit `pdfdoc` · emits `donations.donation.received` | QRIS donasi sosial MDR 0% [V]; laporan Kemensos (Permensos 8/2021) [S] | S15 |
-| 87 | ⬜ | `search` | fullstack | Pencarian global lintas modul (Cmd-K), hasil tersaring izin | — | `SearchProvider` dari tiap modul | MySQL FULLTEXT parser ngram | S1 |
-| 88 | ⬜ | `esign` | fullstack | Tanda tangan elektronik sederhana (gambar + hash audit) dan port adaptor PSrE | — | `SignatureProvider` (Privy, Peruri, VIDA), `FileStore` · emits `esign.document.signed` | PP 71/2019, Permenkominfo 11/2022 [S] | S1 |
+| 80 | ⬜ | `school` | fullstack | Peserta didik, rombel, mapel, guru, tahun ajaran & semester, absensi siswa, nilai & rapor PDF, kontak orang tua | — | `Notifier`, `FormSource` (PPDB) · kit `pdfdoc` · emits `school.attendance.recorded` | Adaptor impor Dapodik (web service) [V ada; rincian S] | S40 |
+| 81 | ⬜ | `clinic` | fullstack | Pasien (NIK, BPJS), pendaftaran & kunjungan, rekam medis SOAP, diagnosis ICD-10, resep, tenaga medis | — | `QueueSource`, `BookingSource` · kit `fieldcrypt` · emits `clinic.encounter.closed` | Adaptor SATUSEHAT: OAuth2, satu client per Organization [V]; PMK 24/2022 [V] | S39 |
+| 82 | ⬜ | `koperasi` | fullstack | Anggota, simpanan pokok/wajib/sukarela, pinjaman & cicilan, SHU | — | `PaymentGateway`, `Approvals`, `Posting` · emits `koperasi.loan.disbursed` | Batas Permenkop 8/2023 & pelaporan PPATK [S] | — |
+| 83 | ⬜ | `rental` | fullstack | Sewa barang/alat: kalender ketersediaan, harga per waktu, deposit, ambil & kembali dengan kondisi, denda telat | — | `RentableSource` (→ items, assets), `PaymentGateway`, `WalletTender` · emits `rental.order.returned` | | S1 |
+| 84 | ⬜ | `property-rent` | fullstack | Properti/kos: unit & kamar, penyewa (KTP terenkripsi), kontrak, tagihan bulanan, deposit, permintaan perbaikan | — | `PaymentGateway`, `Notifier`, `TicketSink` (→ helpdesk) · kit `fieldcrypt` · emits `property-rent.bill.issued` | | S1 |
+| 85 | ⬜ | `projects` | fullstack | Proyek, tugas, papan kanban, timesheet, biaya proyek | — | `EmployeeDirectory`, `CustomerDirectory`, `BudgetCheck` · emits `projects.task.completed` | | S1, S2 |
+| 86 | ⬜ | `fleet` | fullstack | Kendaraan, pengemudi, masa berlaku STNK/KIR/asuransi, odometer, BBM, jadwal servis | — | `AssetRegister`, `EmployeeDirectory`, `Notifier` · emits `fleet.document.expiry-flagged` | | S1 |
+| 87 | ⬜ | `donations` | fullstack | Kampanye, donatur, donasi, kuitansi PDF, halaman progres, ekspor laporan | — | `PaymentGateway`, `ContentSource` (→ cms) · kit `pdfdoc` · emits `donations.donation.received` | QRIS donasi sosial MDR 0% [V]; laporan Kemensos (Permensos 8/2021) [S] | S15 |
+| 88 | ⬜ | `search` | fullstack | Pencarian global lintas modul (Cmd-K), hasil tersaring izin | — | `SearchProvider` dari tiap modul | MySQL FULLTEXT parser ngram | S1 |
+| 89 | ⬜ | `esign` | fullstack | Tanda tangan elektronik sederhana (gambar + hash audit) dan port adaptor PSrE | — | `SignatureProvider` (Privy, Peruri, VIDA), `FileStore` · emits `esign.document.signed` | PP 71/2019, Permenkominfo 11/2022 [S] | S1 |
 
 ## Menambah modul ke roadmap
 
 Kebutuhan baru yang tidak tertampung modul di atas — dari proyek atau dari riset berikutnya —
-ditambahkan sebagai baris baru di gelombang yang sesuai dengan nomor berikutnya (89, 90, …),
+ditambahkan sebagai baris baru di gelombang yang sesuai dengan nomor berikutnya (90, 91, …),
 setelah lolos uji [Seberapa besar satu modul](#seberapa-besar-satu-modul). Perbarui ringkasan.
 Modul yang ternyata tidak dibutuhkan tidak dihapus dari tabel: tandai `✖ dibatalkan` dengan
 alasannya.
