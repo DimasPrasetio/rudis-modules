@@ -12,6 +12,7 @@ import { Pagination } from "@/shared/components/ui/pagination";
 import { SearchInput } from "@/shared/components/ui/search-input";
 import { StatusBadge } from "@/shared/components/ui/status-badge";
 import { Toolbar } from "@/shared/components/ui/toolbar";
+import { useCan } from "@/shared/access";
 import { useResource } from "@/shared/hooks/use-resource";
 import { formatDateTime } from "@/shared/lib/format";
 import { listAudit, listModules } from "@/modules/audit-log/services/audit.service";
@@ -36,11 +37,13 @@ export default function AuditPage() {
   const [target, setTarget] = useState("");
   const [range, setRange] = useState({ from: "", to: "" });
   const [open, setOpen] = useState<AuditEntry>();
-  const modules = useResource((signal) => listModules(signal), []);
-  const entries = useResource((signal) => listAudit({ page, limit, kind, module, target, ...range }, signal), [page, limit, kind, module, target, range.from, range.to]);
+  const [scope, setScope] = useState<"" | "system">("");
+  const canSystem = useCan("audit-log.system");
+  const modules = useResource((signal) => listModules(scope, signal), [scope]);
+  const entries = useResource((signal) => listAudit({ page, limit, kind, module, target, scope, ...range }, signal), [page, limit, kind, module, target, scope, range.from, range.to]);
   const rows = entries.data?.data ?? [];
   const meta = entries.data?.meta ?? { page, limit, total: 0, total_pages: 0 };
-  const filtered = Boolean(kind || module || target || range.from || range.to);
+  const filtered = Boolean(scope || kind || module || target || range.from || range.to);
 
   const columns: DataTableColumn<AuditEntry>[] = [
     { header: "Waktu", id: "time", render: (e) => <span className="tabular whitespace-nowrap">{formatDateTime(e.occurred_at)}</span> },
@@ -96,6 +99,21 @@ export default function AuditPage() {
           }
           more={
             <div className="grid gap-3">
+              {canSystem && (
+                <FormField label="Cakupan" hint="Tingkat instalasi: catatan sebelum perusahaan dipilih, mis. upaya masuk. Hanya dari perusahaan induk.">
+                  <NativeSelect
+                    value={scope}
+                    onChange={(e) => {
+                      setPage(1);
+                      setModule("");
+                      setScope(e.target.value as "" | "system");
+                    }}
+                  >
+                    <NativeSelectOption value="">Perusahaan aktif</NativeSelectOption>
+                    <NativeSelectOption value="system">Tingkat instalasi</NativeSelectOption>
+                  </NativeSelect>
+                </FormField>
+              )}
               <FormField label="Jenis catatan">
                 <NativeSelect
                   value={kind}
@@ -122,7 +140,7 @@ export default function AuditPage() {
               />
             </div>
           }
-          moreActiveCount={(kind ? 1 : 0) + (range.from ? 1 : 0) + (range.to ? 1 : 0)}
+          moreActiveCount={(scope ? 1 : 0) + (kind ? 1 : 0) + (range.from ? 1 : 0) + (range.to ? 1 : 0)}
         />
         <DataTable
           columns={columns}

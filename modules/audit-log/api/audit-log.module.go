@@ -26,7 +26,10 @@ type Module struct {
 // New builds the module. AUDIT_RETENTION_DAYS (default 365) is how long entries are kept.
 // users is optional (nil): without it actors are shown by ID.
 func New(d *kernel.Deps, users ports.UserDirectory) (*Module, error) {
-	d.Authz.Declare(kernel.Permission{Name: presentation.PermRead, Module: "audit-log", Description: "Melihat log aktivitas"})
+	d.Authz.Declare(
+		kernel.Permission{Name: presentation.PermRead, Module: "audit-log", Description: "Melihat log aktivitas"},
+		kernel.Permission{Name: presentation.PermSystem, Module: "audit-log", Description: "Melihat log aktivitas tingkat instalasi (sebelum perusahaan dipilih)"},
+	)
 	days, err := strconv.Atoi(config.Get("AUDIT_RETENTION_DAYS", "365"))
 	if err != nil || days < 30 {
 		return nil, fmt.Errorf("audit-log: AUDIT_RETENTION_DAYS must be a number of days, at least 30 (got %q)", config.Get("AUDIT_RETENTION_DAYS", ""))
@@ -35,6 +38,10 @@ func New(d *kernel.Deps, users ports.UserDirectory) (*Module, error) {
 	d.Jobs.Every("audit-log.prune", 24*time.Hour, svc.Prune)
 	return &Module{svc: svc, handler: presentation.NewHandler(svc, d.Authz, d.Clock)}, nil
 }
+
+// UseActorCompanies wires the optional ActorCompanies port — from register.go.late, once the
+// provider (an organization module, which needs users, which this trail names) is built.
+func (m *Module) UseActorCompanies(c ports.ActorCompanies) { m.svc.UseActorCompanies(c) }
 
 // Routes mounts /api/v1/audit.
 func (m *Module) Routes(mux *http.ServeMux) { m.handler.Routes(mux) }

@@ -4,6 +4,7 @@ package presentation
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,8 +17,13 @@ import (
 	"__GO_MODULE__/internal/shared/response"
 )
 
-// PermRead is the permission this module declares and guards with.
-const PermRead = "audit-log.read"
+// Permissions this module declares and guards with.
+const (
+	PermRead = "audit-log.read"
+	// PermSystem reads the installation-level trail (company 0) — held across the home company
+	// (company 1), where the installation is administered.
+	PermSystem = "audit-log.system"
+)
 
 type entryDTO struct {
 	ID         int64           `json:"id"`
@@ -49,6 +55,38 @@ func NewHandler(svc *application.Service, authz *kernel.AuthzSlot, clock kernel.
 func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/audit", h.authz.Require(PermRead, http.HandlerFunc(h.list)))
 	mux.Handle("GET /api/v1/audit/modules", h.authz.Require(PermRead, http.HandlerFunc(h.modules)))
+}
+
+// reach is how far the signed-in reader sees: the installation-level trail with ?scope=system,
+// else the active company's branches their audit-log.read reaches.
+func (h *Handler) reach(r *http.Request) (application.Reach, error) {
+	ctx := r.Context()
+	if r.URL.Query().Get("scope") == "system" {
+		sc := kernel.ScopeFrom(ctx)
+		home := sc.CompanyID == kernel.DefaultCompany && sc.BranchID == 0
+		u, err := h.authz.Units(ctx, PermSystem)
+		if err != nil {
+			return application.Reach{}, err
+		}
+		return application.Reach{System: true, SystemAllowed: home && u.AllBranches}, nil
+	}
+	u, err := h.authz.Units(ctx, PermRead)
+	if err != nil {
+		return application.Reach{}, err
+	}
+	return application.Reach{AllBranches: u.AllBranches, Branches: u.BranchIDs}, nil
+}
+
+// fail answers the refusals of a reach the reader does not have; anything else as an error.
+func fail(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, application.ErrSystemDenied):
+		response.Fail(w, http.StatusForbidden, "Log tingkat instalasi hanya untuk pemegang izin audit-log.system di seluruh perusahaan induk", nil)
+	case errors.Is(err, application.ErrNoBranches):
+		response.Fail(w, http.StatusForbidden, "Anda tidak memiliki izin untuk melihat log aktivitas", nil)
+	default:
+		response.Error(w, r, err)
+	}
 }
 
 // day parses YYYY-MM-DD as the start of that day where the request works (its branch's time
@@ -94,10 +132,15 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		}
 		f.To = t.AddDate(0, 0, 1).UTC() // the whole "to" day
 	}
-	p := pagination.FromRequest(r)
-	entries, total, err := h.svc.List(r.Context(), f, p)
+	reach, err := h.reach(r)
 	if err != nil {
 		response.Error(w, r, err)
+		return
+	}
+	p := pagination.FromRequest(r)
+	entries, total, err := h.svc.List(r.Context(), reach, f, p)
+	if err != nil {
+		fail(w, r, err)
 		return
 	}
 	out := make([]entryDTO, len(entries))
@@ -113,9 +156,14 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) modules(w http.ResponseWriter, r *http.Request) {
-	mods, err := h.svc.Modules(r.Context())
+	reach, err := h.reach(r)
 	if err != nil {
 		response.Error(w, r, err)
+		return
+	}
+	mods, err := h.svc.Modules(r.Context(), reach)
+	if err != nil {
+		fail(w, r, err)
 		return
 	}
 	if mods == nil {

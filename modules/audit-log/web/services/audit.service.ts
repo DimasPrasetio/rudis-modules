@@ -10,6 +10,8 @@ export interface AuditQuery {
   target: string;
   from: string;
   to: string;
+  /** "system": the installation-level trail (audit-log.system across the home company). */
+  scope: "" | "system";
 }
 
 export async function listAudit(q: AuditQuery, signal?: AbortSignal): Promise<ApiPage<AuditEntry>> {
@@ -18,7 +20,7 @@ export async function listAudit(q: AuditQuery, signal?: AbortSignal): Promise<Ap
   return data;
 }
 
-export async function listModules(signal?: AbortSignal): Promise<string[]> {
-  const { data } = await httpClient.get<ApiSuccess<string[]>>("/api/v1/audit/modules", { signal });
+export async function listModules(scope: "" | "system", signal?: AbortSignal): Promise<string[]> {
+  const { data } = await httpClient.get<ApiSuccess<string[]>>("/api/v1/audit/modules", { params: scope ? { scope } : {}, signal });
   return data.data;
 }

@@ -30,7 +30,7 @@ type Module struct {
 // be writable, or the API does not start.
 func New(d *kernel.Deps) (*Module, error) {
 	d.Authz.Declare(
-		kernel.Permission{Name: presentation.PermRead, Module: "files", Description: "Melihat dan mengunduh semua berkas"},
+		kernel.Permission{Name: presentation.PermRead, Module: "files", Description: "Melihat dan mengunduh berkas yang modul pemiliknya izinkan"},
 		kernel.Permission{Name: presentation.PermManage, Module: "files", Description: "Menghapus berkas"},
 	)
 	maxBytes, err := strconv.ParseInt(config.Get("FILES_MAX_BYTES", strconv.Itoa(10<<20)), 10, 64)

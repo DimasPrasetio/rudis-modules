@@ -34,6 +34,17 @@ func TestBuildMessage(t *testing.T) {
 // reject when it is set.
 func fakeServer(t *testing.T, reject string) (addr string, got chan string) {
 	t.Helper()
+	return fakeServerWith(t, serverAnswers{rcpt: reject})
+}
+
+// serverAnswers changes what fakeServerWith replies: a refusal at MAIL FROM or RCPT, and what it
+// does at QUIT ("drop": hang up without answering).
+type serverAnswers struct {
+	mail, rcpt, quit string
+}
+
+func fakeServerWith(t *testing.T, ans serverAnswers) (addr string, got chan string) {
+	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -60,10 +71,14 @@ func fakeServer(t *testing.T, reject string) (addr string, got chan string) {
 			case strings.HasPrefix(cmd, "EHLO"), strings.HasPrefix(cmd, "HELO"):
 				say("250 fake")
 			case strings.HasPrefix(cmd, "MAIL"):
-				say("250 ok")
+				if ans.mail != "" {
+					say(ans.mail)
+				} else {
+					say("250 ok")
+				}
 			case strings.HasPrefix(cmd, "RCPT"):
-				if reject != "" {
-					say(reject)
+				if ans.rcpt != "" {
+					say(ans.rcpt)
 				} else {
 					say("250 ok")
 				}
@@ -79,7 +94,13 @@ func fakeServer(t *testing.T, reject string) (addr string, got chan string) {
 				say("250 queued")
 				got <- data.String()
 			case cmd == "QUIT":
-				say("221 bye")
+				switch ans.quit {
+				case "drop":
+				case "":
+					say("221 bye")
+				default:
+					say(ans.quit)
+				}
 				return
 			default:
 				say("250 ok")
@@ -150,5 +171,46 @@ func TestStartTLSIsRequiredWhenAsked(t *testing.T) {
 	err := SMTP{Host: host, Port: p, TLS: "starttls"}.Send(context.Background(), application.Envelope{From: "noreply@app.test", To: "a@example.com", Subject: "s", Text: "t"})
 	if err == nil || !strings.Contains(err.Error(), "STARTTLS") {
 		t.Fatalf("a server without STARTTLS must be refused, got %v", err)
+	}
+}
+
+func TestMessageIDIsTheSameOnEveryAttempt(t *testing.T) {
+	e := application.Envelope{ID: 9, CreatedAt: time.Date(2026, 10, 28, 1, 2, 3, 4, time.UTC), From: "noreply@app.test", To: "a@example.com", Subject: "s", Text: "t",
+		ReplyTo: "halo@tokomaju.test"}
+	id := func() string {
+		msg, err := BuildMessage(e, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := string(msg)
+		if !strings.Contains(s, "Reply-To: <halo@tokomaju.test>\r\n") {
+			t.Fatalf("no Reply-To:\n%s", s)
+		}
+		i := strings.Index(s, "Message-ID: ")
+		return s[i : i+strings.Index(s[i:], "\r\n")]
+	}
+	if a, b := id(), id(); a != b {
+		t.Fatalf("Message-ID changed between attempts: %s / %s", a, b)
+	}
+}
+
+func TestAnAcceptedMessageIsDeliveredWhateverQuitSays(t *testing.T) {
+	for _, quit := range []string{"drop", "421 closing"} {
+		addr, got := fakeServerWith(t, serverAnswers{quit: quit})
+		host, p := hostPort(t, addr)
+		err := SMTP{Host: host, Port: p, TLS: "none"}.Send(context.Background(), application.Envelope{From: "noreply@app.test", To: "ana@example.com", Subject: "s", Text: "t"})
+		if err != nil {
+			t.Fatalf("quit %q: the server took the message, yet Send failed (it would be sent again): %v", quit, err)
+		}
+		<-got
+	}
+}
+
+func TestASenderRefusalIsConfigurationNotPermanent(t *testing.T) {
+	addr, _ := fakeServerWith(t, serverAnswers{mail: "553 5.7.1 sender not allowed"})
+	host, p := hostPort(t, addr)
+	err := SMTP{Host: host, Port: p, TLS: "none"}.Send(context.Background(), application.Envelope{From: "noreply@app.test", To: "ana@example.com", Subject: "s", Text: "t"})
+	if !errors.As(err, new(application.ConfigError)) || errors.As(err, new(application.PermanentError)) {
+		t.Fatalf("a sender refused at MAIL FROM must be a ConfigError, retried — got %T %v", err, err)
 	}
 }

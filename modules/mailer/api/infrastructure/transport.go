@@ -74,11 +74,14 @@ func (t SMTP) Send(ctx context.Context, e application.Envelope) error {
 	if t.Username != "" {
 		// PlainAuth refuses to send the password over an unencrypted connection to a remote host.
 		if err := c.Auth(smtp.PlainAuth("", t.Username, t.Password, t.Host)); err != nil {
-			return classify(fmt.Errorf("auth: %w", err))
+			return configError(fmt.Errorf("auth: %w", err))
 		}
 	}
 	if err := c.Mail(e.From); err != nil {
-		return classify(err)
+		// Refused at MAIL FROM: the server will not take mail from this sender (an unverified
+		// domain, a disallowed address, authentication required) — the app's setup, not the
+		// recipient's answer.
+		return configError(fmt.Errorf("mail from: %w", err))
 	}
 	if err := c.Rcpt(e.To); err != nil {
 		return classify(err)
@@ -97,7 +100,23 @@ func (t SMTP) Send(ctx context.Context, e application.Envelope) error {
 	if err := w.Close(); err != nil {
 		return classify(err)
 	}
-	return c.Quit()
+	// The server has accepted the message (its reply to the end of DATA). Whatever QUIT answers,
+	// or a connection dropped after it, the message is on its way: reporting a failure here would
+	// send it a second time.
+	_ = c.Quit()
+	return nil
+}
+
+// configError marks a refusal of the app's own setup (RFC 5321 / RFC 4954: 530 authentication
+// required, 535 credentials invalid, a sender refused at MAIL FROM) as a ConfigError, retried like
+// a temporary failure: it is the same for every message until someone fixes the configuration,
+// and must not settle a message as permanently undeliverable. A network error stays itself.
+func configError(err error) error {
+	var tp *textproto.Error
+	if errors.As(err, &tp) {
+		return application.ConfigError{Err: err}
+	}
+	return err
 }
 
 // classify marks a 5xx answer as permanent: the server will not accept it however often it is
@@ -119,10 +138,15 @@ func BuildMessage(e application.Envelope, now time.Time) ([]byte, error) {
 	var buf bytes.Buffer
 	header := func(k, v string) { fmt.Fprintf(&buf, "%s: %s\r\n", k, v) }
 	header("From", from.String())
+	if e.ReplyTo != "" {
+		header("Reply-To", (&mail.Address{Address: e.ReplyTo}).String())
+	}
 	header("To", to.String())
 	header("Subject", mime.QEncoding.Encode("utf-8", e.Subject))
 	header("Date", now.Format(time.RFC1123Z))
-	header("Message-ID", fmt.Sprintf("<%d.%s@%s>", e.ID, randomHex(8), domain))
+	// The same for every attempt at one message: a receiver that sees a delivery repeated after
+	// a lost acknowledgement can recognise it as the same email.
+	header("Message-ID", fmt.Sprintf("<%d.%d@%s>", e.ID, e.CreatedAt.UnixNano(), domain))
 	header("MIME-Version", "1.0")
 	if e.HTML == "" {
 		header("Content-Type", `text/plain; charset="utf-8"`)

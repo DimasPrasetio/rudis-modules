@@ -49,7 +49,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import net from "node:net";
-import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyPreset, installModule as installOne, missingKits } from "./lib/install.mjs";
@@ -185,9 +185,12 @@ function expect(label, cond, detail) {
 
 // --- mail (full scenario) ------------------------------------------------------------------
 
-/** The smallest SMTP server that takes every message: the mailer sends to it (SMTP_TLS=none). */
+/** The smallest SMTP server that takes every message: the mailer sends to it (SMTP_TLS=none).
+ *  state.mode makes it misbehave: "drop-quit" hangs up at QUIT without answering (after it took
+ *  the message), "reject-mail" refuses the sender at MAIL FROM (553) — a configuration error. */
 function smtpSink() {
   const messages = [];
+  const state = { mode: "" };
   const server = net.createServer((sock) => {
     let buf = "";
     let data = null;
@@ -211,6 +214,7 @@ function smtpSink() {
         }
         const cmd = line.toUpperCase();
         if (cmd.startsWith("EHLO") || cmd.startsWith("HELO")) say("250 testbed");
+        else if (cmd.startsWith("MAIL FROM:") && state.mode === "reject-mail") say("553 5.7.1 sender not allowed");
         else if (cmd.startsWith("RCPT TO:")) {
           rcpt.push(line.slice(8).replace(/[<>]/g, "").trim());
           say("250 ok");
@@ -218,13 +222,17 @@ function smtpSink() {
           data = [];
           say("354 go");
         } else if (cmd === "QUIT") {
+          if (state.mode === "drop-quit") {
+            sock.destroy();
+            return;
+          }
           say("221 bye");
           sock.end();
         } else say("250 ok");
       }
     });
   });
-  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ port: server.address().port, messages, close: () => server.close() })));
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ port: server.address().port, messages, state, close: () => server.close() })));
 }
 
 /** Quoted-printable body text, decoded. */
@@ -348,6 +356,13 @@ async function full() {
         SMTP_HOST: "127.0.0.1", SMTP_PORT: String(sink.port), SMTP_TLS: "none", MAIL_FROM: "noreply@testbed.test",
         APP_URL: "http://testbed.test",
       };
+      // Bytes a save left behind when its transaction rolled back: no row, two days old. The
+      // files purge job, run at start, removes them.
+      const orphan = join(dir, "apps/api/data/files/2020/01", "0".repeat(31) + "1");
+      mkdirSync(dirname(orphan), { recursive: true });
+      writeFileSync(orphan, PNG);
+      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 3600 * 1000);
+      utimesSync(orphan, twoDaysAgo, twoDaysAgo);
       api = await startApi(dir, port, apiEnv);
       const admin = client(port);
       expect("readyz 200 with the database", (await admin.call("GET", "/readyz")).status === 200);
@@ -459,13 +474,32 @@ async function full() {
       expect("settings: the logo is public, typed by its content, nosniff",
         logo.status === 200 && logo.headers.get("content-type") === "image/png" && logo.headers.get("x-content-type-options") === "nosniff");
 
+      // The administration page reaches only files their owner opened to a read permission the
+      // viewer holds: the logo (settings named none) is settings' own business.
+      const logoId = mysqlQuery(db, "SELECT id FROM files WHERE owner = 'settings' AND deleted_at IS NULL ORDER BY id DESC LIMIT 1", name);
       const fl = await admin.call("GET", "/api/v1/files");
-      const logoFile = fl.body.data?.find((f) => f.owner === "settings");
-      expect("files: the logo is listed with its module, type, and SHA-256", fl.status === 200 && logoFile?.content_type === "image/png" && logoFile?.sha256?.length === 64 && fl.body.data.length === 1, fl.body);
+      expect("files: a file its owner opened to no read permission is not on the administration page", fl.status === 200 && fl.body.data?.length === 0, fl.body);
+      const hidden = await fetch(`http://localhost:${port}/api/v1/files/${logoId}/download`, { headers: { Cookie: admin.cookie } });
+      expect("files: …nor downloadable there (the same 404 as a file that does not exist)", hidden.status === 404);
+      mysqlQuery(db, `UPDATE files SET read_permission = 'settings.read' WHERE id = ${logoId}`, name); // as an owner storing with Upload.ReadPermission
+      const arsipRole = await admin.call("POST", "/api/v1/rbac/roles", { name: "Arsip", permissions: ["files.read"] });
+      const arsipUser = await admin.call("POST", "/api/v1/users", { name: "Arsip", email: "arsip@example.com", password: "arsip-pass-123" });
+      await admin.call("POST", `/api/v1/rbac/roles/${arsipRole.body.data?.id}/members`, { user_id: arsipUser.body.data?.id });
+      const arsip = client(port);
+      await arsip.call("POST", "/api/v1/auth/login", { email: "arsip@example.com", password: "arsip-pass-123" });
+      const opened = await admin.call("GET", "/api/v1/files");
+      const logoFile = opened.body.data?.find((f) => f.owner === "settings");
+      expect("files: opened to settings.read, the logo is listed to a holder of it, with its module, type, and SHA-256",
+        logoFile?.content_type === "image/png" && logoFile?.sha256?.length === 64 && opened.body.data.length === 1, opened.body);
+      const al = await arsip.call("GET", "/api/v1/files");
+      expect("files: files.read alone does not reach it (settings.read is the owner's condition)", al.status === 200 && al.body.data?.length === 0, al.body);
+      expect("files: …nor download it", (await fetch(`http://localhost:${port}/api/v1/files/${logoId}/download`, { headers: { Cookie: arsip.cookie } })).status === 404);
       const dl = await fetch(`http://localhost:${port}/api/v1/files/${logoFile?.id}/download`, { headers: { Cookie: admin.cookie } });
       expect("files: a download is an attachment in a sandbox, never rendered",
         dl.status === 200 && /attachment/.test(dl.headers.get("content-disposition") ?? "") && /sandbox/.test(dl.headers.get("content-security-policy") ?? ""));
       expect("files: someone without files.read → 403", (await b.call("GET", "/api/v1/files")).status === 403);
+      expect("files: the purge job removed stored bytes no row refers to, older than a day", await waitFor(() => (existsSync(orphan) ? undefined : true), 15000) === true);
+      expect("files: …and kept the logo's", existsSync(join(dir, "apps/api/data/files", mysqlQuery(db, `SELECT storage_key FROM files WHERE id = ${logoId}`, name))));
 
       const prof = await admin.call("PUT", "/api/v1/account/profile", { name: "Admin Utama" });
       expect("users: the signed-in user renames themselves", prof.status === 200 && (await admin.call("GET", "/api/v1/auth/me")).body.data?.name === "Admin Utama", prof.body);
@@ -520,8 +554,9 @@ async function full() {
       // company 1 exists, and asking for another is refused.
       expect("mailer: delivered by kernel tasks", Number(mysqlQuery(db, "SELECT COUNT(*) FROM kernel_tasks WHERE kind = 'mailer.deliver' AND status = 'done'", name)) >= 1);
       expect("scope: X-Scope for a company that does not exist here → 403", (await admin.call("GET", "/api/v1/users", undefined, { "X-Scope": "2" })).status === 403);
-      expect("settings, files, roles, and the audit trail are company 1's",
-        mysqlQuery(db, "SELECT COUNT(*) FROM settings WHERE company_id <> 1", name) === "0" && mysqlQuery(db, "SELECT COUNT(*) FROM audit_log WHERE company_id <> 1", name) === "0");
+      expect("settings, files, roles, the audit trail, and the outbox are company 1's",
+        mysqlQuery(db, "SELECT COUNT(*) FROM settings WHERE company_id <> 1", name) === "0" && mysqlQuery(db, "SELECT COUNT(*) FROM audit_log WHERE company_id <> 1", name) === "0"
+        && mysqlQuery(db, "SELECT COUNT(*) FROM mail_outbox WHERE company_id <> 1", name) === "0");
 
       // Two API processes on one database (a deploy's overlap): every email goes out exactly once.
       api2 = await startApi(dir, 18096, apiEnv);
@@ -536,6 +571,23 @@ async function full() {
       await new Promise((r) => setTimeout(r, 12000)); // one more delivery round on each process
       const counts = extra.map((e) => sink.messages.filter((m) => m.to === e).length);
       expect("jobs: with two processes running, each of 4 emails was sent exactly once", counts.every((n) => n === 1), counts);
+
+      // The server took the message but hung up at QUIT: delivered once, recorded as sent.
+      const outboxRow = (email) => mysqlQuery(db, `SELECT CONCAT_WS('|', status, attempts, last_error) FROM mail_outbox WHERE to_address = '${email}' ORDER BY id DESC LIMIT 1`, name);
+      sink.state.mode = "drop-quit";
+      await admin.call("POST", "/api/v1/users", { name: "Quit", email: "quit@example.com", password: "quit-pass-123" });
+      await client(port).call("POST", "/api/v1/auth/forgot", { email: "quit@example.com" });
+      const quitSent = await waitFor(() => (outboxRow("quit@example.com").startsWith("sent|") ? outboxRow("quit@example.com") : undefined), 30000);
+      expect("mailer: a connection dropped at QUIT after the server took the message is a delivery, not a failure (no second send)",
+        quitSent === "sent|1|" && sink.messages.filter((m) => m.to === "quit@example.com").length === 1, [quitSent, outboxRow("quit@example.com")]);
+      // The server refuses the sender (configuration): retried, never failed at once.
+      sink.state.mode = "reject-mail";
+      await admin.call("POST", "/api/v1/users", { name: "Cfg", email: "cfg@example.com", password: "cfg-pass-1234" });
+      await client(port).call("POST", "/api/v1/auth/forgot", { email: "cfg@example.com" });
+      const cfg = await waitFor(() => (/^[a-z]+\|[1-9]/.test(outboxRow("cfg@example.com")) ? outboxRow("cfg@example.com") : undefined), 30000);
+      expect("mailer: a sender refused at MAIL FROM is a configuration error — retried, not failed",
+        Boolean(cfg) && !cfg.startsWith("failed|") && /konfigurasi SMTP/.test(cfg), cfg);
+      sink.state.mode = "";
 
       const cookieBefore = admin.cookie;
       const out = await admin.call("POST", "/api/v1/auth/logout");
@@ -1136,7 +1188,9 @@ async function organization() {
     r = cli("remove", "organization");
     expect("removing organization is refused while users and rbac are wired to it", r.status === 1 && r.stderr.includes("users"), r.stderr);
     // A module installed after the late lines: they move back after its block.
-    installModule(lib, dir, "audit-log", { ports: { UserDirectory: "users" } });
+    installModule(lib, dir, "audit-log", { ports: { UserDirectory: "users", ActorCompanies: "organization" } });
+    expect("audit-log's late ActorCompanies port is wired to organization",
+      readFileSync(registry, "utf8").includes("auditLogModule.UseActorCompanies(auditActorCompanies{organization: organizationModule.Client()})"));
     // A release whose build line changes, upgraded while rewiring (its block moves to the end):
     // its own late line must follow it again.
     const rbacManifest = join(lib, "modules/rbac/module.json");
@@ -1217,6 +1271,19 @@ async function organization() {
       expect("…and is refused company 1 (403)", (await bc.call("GET", "/api/v1/organization/me", undefined, at("1"))).status === 403);
       expect("…and a malformed scope (403)", (await bc.call("GET", "/api/v1/organization/me", undefined, at("1;DROP"))).status === 403);
 
+      // The audit trail: a sign-in happens before any company is chosen — installation-level, and
+      // filed in the companies of the person signing in, never in company 1 for everyone.
+      const signedIn = (res) => (res.body.data ?? []).some((e) => e.action === "auth.signed_in" && e.actor_id === budi);
+      const trailB = await admin.call("GET", "/api/v1/audit?kind=security&limit=100", undefined, at(String(b)));
+      expect("audit-log: B's auditors see their own person's sign-in", trailB.status === 200 && signedIn(trailB), trailB.body);
+      const trail1 = await admin.call("GET", "/api/v1/audit?kind=security&limit=100");
+      expect("audit-log: company 1's auditors do not see another company's people signing in", trail1.status === 200 && !signedIn(trail1));
+      expect("audit-log: no installation-level record is filed under company 1 for someone who is not placed there",
+        q(`SELECT COUNT(*) FROM audit_log WHERE company_id = 1 AND actor_id = ${budi}`) === "0");
+      const system = await admin.call("GET", "/api/v1/audit?scope=system&kind=security&limit=100");
+      expect("audit-log: the installation-level trail opens from the home company for audit-log.system", system.status === 200 && signedIn(system), system.body);
+      expect("audit-log: …and not from another company (403)", (await admin.call("GET", "/api/v1/audit?scope=system", undefined, at(String(b)))).status === 403);
+
       // Company B's own Administrator cannot claim company 1's accounts.
       res = await admin.call("POST", "/api/v1/users", { name: "Citra A", email: "citra@a.test", password: "citra-pass-123" });
       const citra = res.body.data?.id;
@@ -1286,6 +1353,14 @@ async function organization() {
       expect("public: a failed sign-in → 401", (await client(port).call("POST", "/api/v1/auth/login", { email: "admin@example.com", password: "wrong-wrong" })).status === 401);
       const forgot = await client(port).call("POST", "/api/v1/auth/forgot", { email: "admin@example.com" });
       expect("public: forgot password → not a 5xx", forgot.status < 500, forgot.body);
+      const resetMail = await waitFor(() => q("SELECT CONCAT_WS('|', id, company_id) FROM mail_outbox WHERE to_address = 'admin@example.com' ORDER BY id DESC LIMIT 1") || undefined, 10000);
+      expect("mailer: email sent before any company is chosen is installation-level (company 0)", resetMail?.endsWith("|0"), resetMail);
+      const resetId = Number(resetMail?.split("|")[0]);
+      const outbox1 = await admin.call("GET", "/api/v1/mailer/messages");
+      expect("mailer: company 1's outbox does not show it", outbox1.status === 200 && !outbox1.body.data.some((m) => m.id === resetId), outbox1.body);
+      const outboxSys = await admin.call("GET", "/api/v1/mailer/messages?scope=system");
+      expect("mailer: the installation-level outbox shows it, from the home company", outboxSys.status === 200 && outboxSys.body.data.some((m) => m.id === resetId), outboxSys.body);
+      expect("mailer: …not from another company (403)", (await admin.call("GET", "/api/v1/mailer/messages?scope=system", undefined, at(String(b)))).status === 403);
       await new Promise((resolve) => setTimeout(resolve, 13000)); // every interval job runs within ~11 s of start
       expect("no panic in any job, task, or route", !/panic/i.test(api.output()), api.output().split("\n").filter((l) => /panic/i.test(l)).slice(0, 5));
     } finally {
@@ -1298,6 +1373,8 @@ async function organization() {
     expect("--port Placements=none unwires users' late port", r.status === 0, r.stdout + r.stderr);
     r = cli("upgrade", "rbac", "--port", "Placements=none");
     expect("…and rbac's", r.status === 0, r.stdout + r.stderr);
+    r = cli("upgrade", "audit-log", "--port", "ActorCompanies=none");
+    expect("…and audit-log's ActorCompanies", r.status === 0, r.stdout + r.stderr);
     r = cli("remove", "organization");
     const left = readFileSync(registry, "utf8");
     expect("then organization can be removed (rbac's listener stays: the event simply never comes)",

@@ -3,6 +3,7 @@
 package domain
 
 import (
+	"bytes"
 	"net/http"
 	"path"
 	"strings"
@@ -37,8 +38,11 @@ func Detect(head []byte, name string) string {
 	}
 	ext := strings.ToLower(path.Ext(name))
 	switch {
-	case sniffed == "application/zip" && officeByExt[ext] != "":
+	case sniffed == "application/zip" && officeByExt[ext] != "" && ooxml(head):
 		return officeByExt[ext]
+	case sniffed == "application/zip" && officeByExt[ext] != "":
+		// Named .docx/.xlsx/.pptx, but no Office package inside: refused, not trusted.
+		return "application/octet-stream"
 	case sniffed == "text/plain" && ext == ".csv":
 		return "text/csv"
 	case sniffed == "text/plain" && (ext == ".txt" || ext == ""):
@@ -48,6 +52,54 @@ func Detect(head []byte, name string) string {
 		return "application/octet-stream"
 	}
 	return sniffed
+}
+
+// ooxml reports whether a ZIP's first entry is an Office Open XML package part: the first local
+// file header (at offset 0) names its file at offset 30, and Office writes [Content_Types].xml,
+// _rels/, or docProps/ first (ECMA-376 Part 2, Open Packaging Conventions).
+func ooxml(head []byte) bool {
+	if len(head) < 30 || !bytes.HasPrefix(head, []byte("PK\x03\x04")) {
+		return false
+	}
+	name := head[30:]
+	for _, part := range []string{"[Content_Types].xml", "_rels/", "docProps/", "word/", "xl/", "ppt/"} {
+		if bytes.HasPrefix(name, []byte(part)) {
+			return true
+		}
+	}
+	return false
+}
+
+// extensions are the names a stored file of each type is given: its own extension is kept when
+// it is one of these, else the first replaces it.
+var extensions = map[string][]string{
+	"image/png": {".png"}, "image/jpeg": {".jpg", ".jpeg"}, "image/webp": {".webp"}, "image/gif": {".gif"},
+	"application/pdf": {".pdf"},
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document":   {".docx"},
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":         {".xlsx"},
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation": {".pptx"},
+	"text/plain": {".txt"}, "text/csv": {".csv"},
+}
+
+// NameFor gives name the extension of the content type the bytes were found to be, so a
+// download is opened by the program that matches its content (OWASP: "the file extension must
+// match the content"). "laporan.html" holding a PDF becomes "laporan.pdf".
+func NameFor(kind, name string) string {
+	exts := extensions[kind]
+	if len(exts) == 0 {
+		return name
+	}
+	ext := path.Ext(name)
+	for _, e := range exts {
+		if strings.EqualFold(ext, e) {
+			return name
+		}
+	}
+	base := strings.TrimSuffix(name, ext)
+	if base == "" {
+		base = "berkas"
+	}
+	return base + exts[0]
 }
 
 // Allowed reports whether kind is in the list.

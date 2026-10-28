@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"time"
 
 	"__GO_MODULE__/internal/kernel"
@@ -18,6 +19,11 @@ import (
 
 // keepDeleted is how long a deleted file's bytes stay on disk (and in the backups).
 const keepDeleted = 30 * 24 * time.Hour
+
+// orphanGrace is how old stored bytes must be before the sweep may remove them for having no
+// row: a save writes the bytes first and the row in the caller's transaction, which commits —
+// or rolls back, leaving the bytes behind — long before this.
+const orphanGrace = 24 * time.Hour
 
 // ErrTooLarge is what a Storage reports when the content passes the limit.
 var ErrTooLarge = errors.New("too large")
@@ -36,9 +42,15 @@ type Repository interface {
 	// SoftDelete deletes an unlocked file; false when there is none to delete.
 	SoftDelete(ctx context.Context, id int64, at time.Time) (bool, error)
 	Lock(ctx context.Context, id int64, at time.Time) error
-	List(ctx context.Context, owner, search string, p pagination.Params) ([]domain.Stored, int64, error)
+	// ListVisible lists the files the administration page may show: stored by this module, or
+	// with a read permission in readable.
+	ListVisible(ctx context.Context, readable []string, owner, search string, p pagination.Params) ([]domain.Stored, int64, error)
+	// ReadPermissions lists the read permissions owner modules named in the company.
+	ReadPermissions(ctx context.Context) ([]string, error)
 	SystemPurgeCandidates(ctx context.Context, before time.Time) ([]Purgeable, error)
 	DeleteRow(ctx context.Context, id int64) error
+	// SystemKnownKeys reports which storage keys a row (of any company, deleted or not) refers to.
+	SystemKnownKeys(ctx context.Context, keys []string) (map[string]bool, error)
 }
 
 // Storage keeps the bytes.
@@ -49,6 +61,13 @@ type Storage interface {
 	Remove(key string) error
 	// CleanPartials removes writes abandoned half-way (a crash, a cut connection).
 	CleanPartials(olderThan time.Duration) error
+	// Keys calls fn with batches of the keys of complete objects older than olderThan.
+	Keys(olderThan time.Duration, batch int, fn func(keys []string) error) error
+}
+
+// Permissions tells what the signed-in user may do — the kernel's d.Authz.
+type Permissions interface {
+	Can(ctx context.Context, permission string) bool
 }
 
 // Auditor records deletions — the kernel's d.Audit.
@@ -75,7 +94,14 @@ func NewService(repo Repository, store Storage, audit Auditor, who Identity, max
 	return &Service{repo: repo, store: store, audit: audit, who: who, maxBytes: maxBytes, now: func() time.Time { return time.Now().UTC() }}
 }
 
-var ownerPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
+var (
+	ownerPattern      = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
+	permissionPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}\.[a-z][a-z0-9.-]{0,38}$`)
+)
+
+// AdminOwner is the owner of a file this module stores itself: shown on the administration page
+// to any holder of files.read.
+const AdminOwner = "files"
 
 func rejected(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", contracts.ErrRejected, fmt.Sprintf(format, args...))
@@ -87,6 +113,9 @@ func (s *Service) Save(ctx context.Context, u contracts.Upload) (contracts.File,
 	if !ownerPattern.MatchString(u.Owner) {
 		return contracts.File{}, fmt.Errorf("files: owner %q is not a module id", u.Owner)
 	}
+	if u.ReadPermission != "" && !permissionPattern.MatchString(u.ReadPermission) {
+		return contracts.File{}, fmt.Errorf("files: read permission %q is not \"<module>.<action>\"", u.ReadPermission)
+	}
 	limit := s.maxBytes
 	if u.MaxBytes > 0 && u.MaxBytes < limit {
 		limit = u.MaxBytes
@@ -96,6 +125,8 @@ func (s *Service) Save(ctx context.Context, u contracts.Upload) (contracts.File,
 		allowed = domain.DefaultTypes
 	}
 	name := domain.CleanName(u.Name)
+	// The name's extension may not contradict the content: decided below from the bytes, then
+	// the stored name gets that type's extension (a PDF named x.html is downloaded as x.pdf).
 	br := bufio.NewReaderSize(u.Reader, 512)
 	head, _ := br.Peek(512)
 	if len(head) == 0 {
@@ -105,6 +136,7 @@ func (s *Service) Save(ctx context.Context, u contracts.Upload) (contracts.File,
 	if !domain.Allowed(kind, allowed) || !domain.Allowed(kind, domain.DefaultTypes) {
 		return contracts.File{}, rejected("jenis berkas tidak diizinkan (%s)", kind)
 	}
+	name = domain.NameFor(kind, name)
 	key, size, sum, err := s.store.Write(ctx, br, limit)
 	if errors.Is(err, ErrTooLarge) {
 		return contracts.File{}, rejected("berkas lebih besar dari %s", humanSize(limit))
@@ -113,7 +145,7 @@ func (s *Service) Save(ctx context.Context, u contracts.Upload) (contracts.File,
 		return contracts.File{}, err
 	}
 	actor, _ := s.who.UserID(ctx)
-	f := domain.Stored{Owner: u.Owner, Name: name, ContentType: kind, Size: size, SHA256: sum, Key: key, CreatedAt: s.now(), CreatedBy: actor}
+	f := domain.Stored{Owner: u.Owner, ReadPermission: u.ReadPermission, Name: name, ContentType: kind, Size: size, SHA256: sum, Key: key, CreatedAt: s.now(), CreatedBy: actor}
 	if f.ID, err = s.repo.Create(ctx, f); err != nil {
 		_ = s.store.Remove(key)
 		return contracts.File{}, err
@@ -172,8 +204,68 @@ func (s *Service) Lock(ctx context.Context, id int64) error {
 	return s.repo.Lock(ctx, id, s.now())
 }
 
-func (s *Service) List(ctx context.Context, owner, search string, p pagination.Params) ([]contracts.File, int64, error) {
-	rows, total, err := s.repo.List(ctx, owner, search, p)
+// readable is which of the company's file read permissions the signed-in user holds.
+func (s *Service) readable(ctx context.Context, can Permissions) ([]string, error) {
+	perms, err := s.repo.ReadPermissions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(perms))
+	for _, p := range perms {
+		if can.Can(ctx, p) {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+// visible reports whether the administration page may show f: a file of this module's own, or
+// one whose owner named a read permission the viewer holds. Anything else — an ID scan, a
+// payslip — is reached only through its owner module, which decides who may see it.
+func visible(f domain.Stored, readable []string) bool {
+	return f.Owner == AdminOwner || (f.ReadPermission != "" && slices.Contains(readable, f.ReadPermission))
+}
+
+// AdminGet is a file for the administration page, or ErrNotFound when it may not show it — the
+// same answer as for a file that does not exist, so its existence is not told either.
+func (s *Service) AdminGet(ctx context.Context, can Permissions, id int64) (domain.Stored, error) {
+	f, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return domain.Stored{}, err
+	}
+	readable, err := s.readable(ctx, can)
+	if err != nil {
+		return domain.Stored{}, err
+	}
+	if !visible(f, readable) {
+		return domain.Stored{}, contracts.ErrNotFound
+	}
+	return f, nil
+}
+
+// AdminOpen opens a file the administration page may show.
+func (s *Service) AdminOpen(ctx context.Context, can Permissions, id int64) (contracts.File, io.ReadSeekCloser, error) {
+	if _, err := s.AdminGet(ctx, can, id); err != nil {
+		return contracts.File{}, nil, err
+	}
+	return s.Open(ctx, id)
+}
+
+// AdminDelete deletes a file the administration page may show.
+func (s *Service) AdminDelete(ctx context.Context, can Permissions, id int64) error {
+	if _, err := s.AdminGet(ctx, can, id); err != nil {
+		return err
+	}
+	return s.Delete(ctx, id)
+}
+
+// AdminList lists the files the administration page may show.
+func (s *Service) AdminList(ctx context.Context, can Permissions, owner, search string, p pagination.Params) ([]contracts.File, int64, error) {
+	readable, err := s.readable(ctx, can)
+	if err != nil {
+		return nil, 0, err
+	}
+	rows, total, err := s.repo.ListVisible(ctx, readable, owner, search, p)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -184,10 +276,14 @@ func (s *Service) List(ctx context.Context, owner, search string, p pagination.P
 	return out, total, nil
 }
 
-// Purge removes the bytes of files deleted more than 30 days ago, and abandoned partial
-// writes — the job the module schedules.
+// Purge removes the bytes of files deleted more than 30 days ago, abandoned partial writes, and
+// stored bytes no row refers to (a save whose transaction rolled back) — the job the module
+// schedules.
 func (s *Service) Purge(ctx context.Context) error {
 	if err := s.store.CleanPartials(24 * time.Hour); err != nil {
+		return err
+	}
+	if err := s.SweepOrphans(ctx); err != nil {
 		return err
 	}
 	gone, err := s.repo.SystemPurgeCandidates(ctx, s.now().Add(-keepDeleted))
@@ -203,6 +299,28 @@ func (s *Service) Purge(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// SweepOrphans removes stored bytes older than a day that no row refers to. A row of any
+// company, deleted or not, keeps its bytes: only the purge above removes those, on schedule.
+func (s *Service) SweepOrphans(ctx context.Context) error {
+	return s.store.Keys(orphanGrace, 500, func(keys []string) error {
+		known, err := s.repo.SystemKnownKeys(ctx, keys)
+		if err != nil {
+			return err
+		}
+		for _, k := range keys {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if !known[k] {
+				if err := s.store.Remove(k); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
 }
 
 func toContract(f domain.Stored) contracts.File {
