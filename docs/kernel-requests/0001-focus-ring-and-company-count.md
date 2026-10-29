@@ -6,6 +6,12 @@ this file is the text and stays here as the record of what was asked and why.
 
 Kernel: 6 (`rudis-monorepo/kernel/v6.0`, eeef47e).
 
+**Answered by kernel 7** (`rudis-monorepo/kernel/v7.0`, f6f4e12; pinned here 29 October 2026):
+`Button` draws a solid 2px `--ring` outline 2px out and `FIELD` a solid `--ring` edge (border +
+1px ring, `--destructive` when invalid); `kernel.CompanyOf(ctx) (int64, bool)` and
+`d.Scope.Several()` answer "one company or several" without a panic. `mailer` 0.3.1 uses
+`CompanyOf`; `bingkai-navy` 0.2.1 keeps its Button focus rule for projects still on kernel 6.
+
 ## What is needed
 
 1. **Keyboard focus visible at ≥ 3:1 on the kernel's own primitives.** `Button`

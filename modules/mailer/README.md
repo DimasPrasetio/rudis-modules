@@ -47,9 +47,10 @@ Recipients and subjects of one company are never shown to another.
 optional `SenderIdentity` port wired (adapter: `settings`), a company's email is named after it
 and replies go to its own email address (Reply-To); without it, `MAIL_FROM_NAME`.
 
-**Kernel 6.** Uses `d.Tx`, `d.Tasks` (delivery; the company travels in the task), `d.Jobs` (the
+**Kernel 7.** Uses `d.Tx`, `d.Tasks` (delivery; the company travels in the task), `d.Jobs` (the
 daily prune, the rescue every 10 minutes), and `d.Audit` (a resend is recorded). Unscoped email
-falls to the default company exactly when the kernel's own `d.Audit` records do.
+takes its company from `kernel.CompanyOf`: the default company in an app with one company,
+installation level (company 0) in an app with several.
 
 **Offers** `contracts.MailClient`. **Needs** nothing; optional late port `SenderIdentity`.
 
@@ -61,6 +62,8 @@ Nav entry in "Pengaturan" (`mailer.read`).
 
 ## Changes
 
+- **0.3.1** — requires kernel 7: the company a message is sent for comes from
+  `kernel.CompanyOf` instead of recovering from `ScopeFrom`'s panic; behavior is unchanged.
 - **0.3.0** — scoped (`"scoped": true`): each message keeps its company (migration 002;
   messages from before the upgrade are installation-level, company 0, seen on the
   installation-level outbox), and the outbox and resend work in the active company only; new

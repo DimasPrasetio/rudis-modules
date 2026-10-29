@@ -109,6 +109,8 @@ chart types (line, bar, donut are enough); floating chat bubbles.
 
 ## Changes
 
+- **0.2.1** — the Button focus rule says why it stays: kernel 7 draws the same solid `--ring`
+  outline itself, and the rule keeps it for projects still on kernel 6. Nothing looks different.
 - **0.2.0** — a touch / kiosk density (`html[data-density="touch"]`): rows of 52px, every
   control at least 44px (`--control-h`), body text 15px, no hover-only affordances — POS,
   absensi, buku tamu, antrean, and KDS screens use this preset instead of one of their own.

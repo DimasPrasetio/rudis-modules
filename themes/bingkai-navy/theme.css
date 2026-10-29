@@ -240,10 +240,12 @@ html[data-density="touch"] {
   }
 }
 
-/* Outside every layer, so it wins over the `outline-none` utility: the kernel's Button (and the
-   sidebar trigger built on it) draws a half-transparent ring, about 1.7:1 — under the 3:1 of
-   WCAG 1.4.11. Keyboard users get the same solid outline as every other control instead; the
-   faint ring is switched off so the two do not stack. */
+/* Outside every layer, so it wins over the `outline-none` utility: up to kernel 6 the kernel's
+   Button (and the sidebar trigger built on it) draws a half-transparent ring, about 1.7:1 —
+   under the 3:1 of WCAG 1.4.11. Keyboard users get the same solid outline as every other control
+   instead; the faint ring is switched off so the two do not stack. Kernel 7 draws this outline
+   itself, so there the rule changes nothing; it stays while a project on kernel 6 may take this
+   preset (a preset states no kernel). */
 :is([data-slot="button"], [data-slot="sidebar-trigger"]):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;

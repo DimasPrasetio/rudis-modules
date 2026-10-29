@@ -24,7 +24,7 @@ or the testbed's scenarios without touching it.
 | [customers](modules/customers/README.md) | fullstack | 0.3.0 | 6 | yes | documents |
 | [docstate](modules/docstate/README.md) | gokit | 0.1.0 | 6 | — | documents |
 | [files](modules/files/README.md) | fullstack | 0.3.0 | 6 | yes | full, organization |
-| [mailer](modules/mailer/README.md) | fullstack | 0.3.0 | 6 | yes | full, lifecycle, organization |
+| [mailer](modules/mailer/README.md) | fullstack | 0.3.1 | 7 | yes | full, lifecycle, organization |
 | [money](modules/money/README.md) | gokit | 0.1.0 | 6 | — | documents |
 | [numbering](modules/numbering/README.md) | fullstack | 0.1.0 | 6 | yes | documents |
 | [organization](modules/organization/README.md) | fullstack | 0.2.0 | 6 | — | organization, documents |
@@ -42,7 +42,7 @@ or the testbed's scenarios without touching it.
 
 | Preset | Version |
 |---|---|
-| [bingkai-navy](themes/bingkai-navy/DESIGN.md) | 0.2.0 |
+| [bingkai-navy](themes/bingkai-navy/DESIGN.md) | 0.2.1 |
 
 | Testbed scenario | Proves |
 |---|---|
@@ -61,7 +61,7 @@ or the testbed's scenarios without touching it.
 | | |
 |---|---|
 | Date | 29 October 2026 |
-| Run on | `abb1c85` (Gelombang 0 P1: 0.11–0.19, every agent branch merged) |
+| Run on | `fe375d5` (kernel 7 pinned) + `mailer` 0.3.1 and `bingkai-navy` 0.2.1 |
 | `npm run check` | passes |
 | `npm run testbed` | all 8 scenarios: `All testbed checks passed: 483 checks.` — MySQL 8.0.46 (local), sqlc 1.31.1, Node 20, Go 1.25 |
 
@@ -93,11 +93,6 @@ fixed; add one when you accept a limit.
 - **Old installation-level audit rows (`audit-log`).** Records written before 0.3.0 that the
   kernel filed without a company were stored under company 1 and cannot be told apart from
   company 1's own; they stay there.
-- **Focus ring of kernel primitives (`bingkai-navy`).** The kernel's Button and FIELD use a
-  faint focus ring; the preset overrides it to a solid ≥3:1 outline. A project without the
-  preset keeps the faint one until the kernel request is released (ROADMAP.md › 0.18).
-- **One company or several (`mailer`).** The kernel exports no test for it, so mailer reads it
-  by recovering from `kernel.ScopeFrom`'s panic. Kernel request ROADMAP.md › 0.18.
 - **Audit is best-effort (kernel).** When writing an audit record fails, the kernel logs it and
   the change still commits, so a reopened period or a raised number can lack its security
   record. Candidate for a kernel request.
@@ -136,6 +131,11 @@ fixed; add one when you accept a limit.
 Newest first. One entry per change that released something or changed how the library works:
 date, what, the tags it created.
 
+- **29 Oct 2026 — kernel request 0001 answered by kernel 7 (ROADMAP.md › 0.18, rudis-modules#1).**
+  - Released: `mailer` 0.3.1 (requires kernel 7: `kernel.CompanyOf` instead of recovering from
+    `ScopeFrom`'s panic), `bingkai-navy` 0.2.1 (its Button focus rule kept for projects on
+    kernel 6 — a preset states no kernel — and says so).
+  - Tags: `mailer/v0.3.1`, `bingkai-navy/v0.2.1`.
 - **29 Oct 2026 — kernel 7.** Pinned from `rudis-monorepo/kernel/v7.0` (f6f4e12); modules may set `requires_kernel` 7.
 - **29 Oct 2026 — Gelombang 0, P1: the rest of the audit's fixes (ROADMAP.md › 0.11–0.19).**
   - Released: `rbac` 0.7.0, `organization` 0.2.0, `customers` 0.3.0, `suppliers` 0.3.0,

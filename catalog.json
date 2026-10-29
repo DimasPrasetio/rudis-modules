@@ -305,7 +305,7 @@
     },
     {
       "id": "mailer",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "kind": "fullstack",
       "title": "Mailer",
       "summary": "Sends the app's email: modules queue a message (MailClient) — inside their own transaction — and a kernel task delivers it over SMTP with retries; an outbox page shows what was sent and what failed. Development without SMTP writes email to the log.",
@@ -319,7 +319,7 @@
       "stacks": [
         "go"
       ],
-      "requires_kernel": 6,
+      "requires_kernel": 7,
       "provides": {
         "contracts": [
           "MailClient"
@@ -990,7 +990,7 @@
   "presets": [
     {
       "id": "bingkai-navy",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "title": "Bingkai Navy",
       "summary": "Dense back-office look: dark-navy frame around a light canvas, navy brand, Inter + Plus Jakarta Sans + Geist Mono, 14px base; a touch density (44px controls) for POS and kiosk screens of the same app.",
       "when_to_use": [

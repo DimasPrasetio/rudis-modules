@@ -166,24 +166,6 @@ func (s *Service) next(ctx context.Context, company, id int64, attempt int, at t
 	return s.tasks.Enqueue(ctx, TaskDeliver, delivery{ID: id, Attempt: attempt, Company: company}, kernel.At(at), kernel.Dedupe(fmt.Sprintf("%d:%d", id, attempt)))
 }
 
-// companyOf is the company a message is sent for: the one ctx works in; without a scope, the
-// default company of an app with one company; else none (0, installation-level) — the email of
-// a reset by token, before any company is chosen. It decides exactly as the kernel's d.Audit
-// does: kernel.ScopeFrom falls to the default company in an app with one company and panics,
-// rather than guess, in an app with several — that answer is what is asked for here, so the
-// panic is the "several companies" reply, not a failure. (The kernel exports no direct test.)
-func companyOf(ctx context.Context) (company int64) {
-	if kernel.HasScope(ctx) {
-		return kernel.ScopeFrom(ctx).CompanyID
-	}
-	defer func() {
-		if recover() != nil {
-			company = 0
-		}
-	}()
-	return kernel.ScopeFrom(ctx).CompanyID
-}
-
 // target is the outbox a reader works on, from what they hold.
 func target(ctx context.Context, r Reach) (int64, error) {
 	if r.System {
@@ -205,7 +187,10 @@ func (s *Service) Send(ctx context.Context, m contracts.Message) (int64, error) 
 	if err := domain.Validate(m.To, m.ToName, m.Subject, m.Text, m.HTML); err != nil {
 		return 0, fmt.Errorf("%w: %v", contracts.ErrInvalid, err)
 	}
-	company := companyOf(ctx)
+	// The company it is sent for: the one ctx works in; without a scope, the default company of
+	// an app with one company, else none (0, installation level) — the email of a reset by
+	// token, before any company is chosen.
+	company, _ := kernel.CompanyOf(ctx)
 	now := s.now()
 	var id int64
 	err := s.tx.Do(ctx, func(ctx context.Context) error {
