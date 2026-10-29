@@ -312,12 +312,14 @@ async function full() {
   const dir = scaffold("full");
   try {
     applyPreset(LIB, dir, "bingkai-navy");
+    // audit-log before rbac: a module is built in install order, and rbac's bootstrap grant at
+    // start reaches the audit table only once the sink is provided.
     for (const [id, opts] of [
       ["app-shell"], ["files"], ["mailer"], ["users"],
+      ["audit-log", { ports: { UserDirectory: "users" } }],
       ["auth", { ports: { UserStore: "users", PasswordWriter: "users", Mailer: "mailer" } }],
       ["rbac", { ports: { UserDirectory: "users" } }],
       ["settings", { ports: { FileStore: "files" } }],
-      ["audit-log", { ports: { UserDirectory: "users" } }],
       ["ui-gallery"],
     ]) {
       installModule(LIB, dir, id, opts);
@@ -444,6 +446,8 @@ async function full() {
         (await admin.call("GET", `/api/v1/users/${dediId}`)).body.data?.is_active === false);
 
       // rbac: the bootstrap admin holds Administrator (*); a user without roles holds nothing.
+      expect("rbac 0.7: the bootstrap grant of Administrator is a security record, by the system",
+        Number(mysqlQuery(db, "SELECT COUNT(*) FROM audit_log WHERE module = 'rbac' AND action = 'role.member_added' AND kind = 'security' AND company_id = 1 AND summary LIKE '%bootstrap%'", name)) >= 1);
       const perms = await admin.call("GET", "/api/v1/rbac/permissions");
       const names = (perms.body.data ?? []).map((p) => p.name);
       expect("permission catalog = what the modules declared",
@@ -458,6 +462,9 @@ async function full() {
       expect("user without roles: rbac/me → no permissions", (await b.call("GET", "/api/v1/rbac/me")).body.data?.permissions?.length === 0);
       const viewer = await admin.call("POST", "/api/v1/rbac/roles", { name: "Viewer", description: "Read only", permissions: ["users.read"] });
       expect("create role Viewer (users.read) → 201", viewer.status === 201, viewer.body);
+      expect("rbac 0.7: creating a role is a security record (in its transaction)",
+        mysqlQuery(db, "SELECT COUNT(*) FROM audit_log WHERE module = 'rbac' AND action = 'role.created' AND kind = 'security'", name) === "1"
+        && mysqlQuery(db, "SELECT COUNT(*) FROM audit_log WHERE module = 'rbac' AND action = 'role.created' AND kind <> 'security'", name) === "0");
       const bad = await admin.call("POST", "/api/v1/rbac/roles", { name: "Bad", permissions: ["nope.never"] });
       expect("unknown permission → 422", bad.status === 422, bad.body);
       expect("give Budi the Viewer role", (await admin.call("POST", `/api/v1/rbac/roles/${viewer.body.data.id}/members`, { user_id: budiId })).status === 201);
@@ -1237,6 +1244,8 @@ async function organization() {
       && reg.indexOf("usersModule, err := users.New(d)") === before.indexOf("usersModule, err := users.New(d)"), reg);
     expect("rbac hears organization.company.created through the composition root",
       reg.includes('d.Events.On("organization.company.created", "rbac.appoint-founder", rbacModule.OnCompanyCreated)'));
+    expect("…and organization.user.unplaced (rbac 0.7)",
+      reg.includes('d.Events.On("organization.user.unplaced", "rbac.revoke-unplaced", rbacModule.OnUserUnplaced)'));
     r = cli("remove", "organization");
     expect("removing organization is refused while users and rbac are wired to it", r.status === 1 && r.stderr.includes("users"), r.stderr);
     // A module installed after the late lines: they move back after its block.
@@ -1247,7 +1256,7 @@ async function organization() {
     // its own late line must follow it again.
     const rbacManifest = join(lib, "modules/rbac/module.json");
     const rm = JSON.parse(readFileSync(rbacManifest, "utf8"));
-    rm.version = "0.6.1";
+    rm.version = "0.7.1"; // one patch above the library's rbac
     rm.ports.push({ name: "Extra", required: false, description: "testbed: a port a later release adds", adapters: {} });
     rm.register.go.build[0] = "rbacModule, err := rbac.New(d, {{port:UserDirectory}}, {{port:Extra}})";
     writeFileSync(rbacManifest, JSON.stringify(rm, null, 2) + "\n");
@@ -1279,6 +1288,7 @@ async function organization() {
         return c;
       };
       const admin = await signIn("admin@example.com", "admin-pass-123");
+      const adminId = (await admin.call("GET", "/api/v1/auth/me")).body.data.id;
       const at = (scope) => (scope ? { "X-Scope": scope } : {});
 
       let me = await admin.call("GET", "/api/v1/organization/me");
@@ -1298,6 +1308,10 @@ async function organization() {
       }, 15000);
       expect("its creator becomes its Administrator (organization.company.created → rbac)", founder === "ok",
         founder === "ok" ? undefined : mysqlQuery(db, "SELECT CONCAT_WS(' | ', kind, status, attempts, last_error) FROM kernel_tasks ORDER BY id DESC LIMIT 1", name));
+      expect("rbac 0.7: company B gets its own Administrator role, made in the founder's transaction",
+        await waitFor(() => (q(`SELECT COUNT(*) FROM roles WHERE company_id = ${b} AND is_system = 1`) === "1" ? "ok" : undefined), 15000) === "ok"
+        && q(`SELECT COUNT(*) FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.company_id = ${b} AND r.company_id = ${b} AND r.is_system = 1 AND ur.user_id = ${adminId}`) === "1");
+      expect("…recorded as security in company B", q(`SELECT COUNT(*) FROM audit_log WHERE module = 'rbac' AND kind = 'security' AND company_id = ${b} AND action IN ('role.created', 'role.member_added')`) === "2");
       res = await admin.call("POST", "/api/v1/organization/companies", { code: "PT-C", name: "PT C", timezone: "Asia/Jakarta" }, at(String(b)));
       expect("companies are managed only from the home company → 403 from inside B", res.status === 403, res.body);
 
@@ -1369,6 +1383,13 @@ async function organization() {
       const bdg = res.body.data.id;
       res = await admin.call("POST", "/api/v1/rbac/roles", { name: "Kepala cabang", description: "", permissions: ["organization.read", "organization.manage", "users.read", "users.manage"] });
       const head = res.body.data.id;
+      // Roles belong to one company: B neither lists nor reaches company 1's, and may use the name.
+      const rolesB = await admin.call("GET", "/api/v1/rbac/roles", undefined, at(String(b)));
+      expect("rbac 0.7: a role defined in company 1 is not listed from company B", rolesB.status === 200 && !rolesB.body.data.some((r) => r.id === head || r.name === "Kepala cabang"), rolesB.body);
+      expect("…nor reachable there (404)", (await admin.call("GET", `/api/v1/rbac/roles/${head}`, undefined, at(String(b)))).status === 404);
+      res = await admin.call("POST", "/api/v1/rbac/roles", { name: "Kepala cabang", description: "", permissions: ["organization.read"] }, at(String(b)));
+      expect("…and B defines its own role of the same name (201)", res.status === 201 && res.body.data.id !== head, res.body);
+      expect("…which company 1 does not list", !(await admin.call("GET", "/api/v1/rbac/roles")).body.data.some((r) => r.id === res.body.data.id));
       const kepala = (await admin.call("POST", "/api/v1/users", { name: "Kepala BDG", email: "kepala@a.test", password: "kepala-pass-123" }, at(`1:${bdg}`))).body.data.id;
       const staf = (await admin.call("POST", "/api/v1/users", { name: "Staf BDG", email: "staf@a.test", password: "staf-pass-123" }, at(`1:${bdg}`))).body.data.id;
       res = await admin.call("POST", `/api/v1/rbac/roles/${head}/members`, { user_id: kepala, branch_id: bdg });
@@ -1382,6 +1403,17 @@ async function organization() {
       expect("…nor place them in the branch", res.status === 403, res.body);
       res = await kc.call("DELETE", `/api/v1/organization/placements/${staf}?branch=${bdg}`);
       expect("…but takes the branch's own staff out of it", res.status === 200, res.body);
+
+      // A placement taken away takes the roles held there with it (organization.user.unplaced →
+      // rbac): Budi, Administrator of B, is unplaced from B.
+      expect("Budi holds a role in B", q(`SELECT COUNT(*) FROM user_roles WHERE user_id = ${budi} AND company_id = ${b}`) === "1");
+      res = await admin.call("DELETE", `/api/v1/organization/placements/${budi}`, undefined, at(String(b)));
+      expect("Budi unplaced from company B", res.status === 200, res.body);
+      expect("organization 0.2 → rbac 0.7: his roles in B are revoked",
+        await waitFor(() => (q(`SELECT COUNT(*) FROM user_roles WHERE user_id = ${budi} AND company_id = ${b}`) === "0" ? "ok" : undefined), 15000) === "ok",
+        mysqlQuery(db, "SELECT CONCAT_WS(' | ', kind, status, attempts, last_error) FROM kernel_tasks WHERE kind = 'event:rbac.revoke-unplaced' ORDER BY id DESC LIMIT 1", name));
+      expect("…as a security record in B, saying why",
+        q(`SELECT COUNT(*) FROM audit_log WHERE module = 'rbac' AND action = 'role.member_removed' AND kind = 'security' AND company_id = ${b} AND target = 'user:${budi}' AND summary LIKE '%penempatan%'`) === "1");
 
       // Deactivating B: its people cannot work there; Budi still has Jayapura.
       res = await admin.call("POST", `/api/v1/organization/companies/${b}/deactivate`);

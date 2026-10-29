@@ -680,3 +680,70 @@ func TestDeactivatingACompanyHandsItsPeopleToNoOne(t *testing.T) {
 		t.Fatalf("placing across a company from inside another: %v", err)
 	}
 }
+
+func TestUnplacingAnnouncesItInTheSameTransaction(t *testing.T) {
+	w := setup(t)
+	ctx := in(1, 0)
+	bdg, _ := w.svc.CreateBranch(ctx, application.BranchInput{Code: "BDG", Name: "Bandung"})
+	if err := w.svc.Place(ctx, admin, budi, bdg.ID); err != nil {
+		t.Fatal(err)
+	}
+	// The fake grants per exact scope: the admin manages Bandung too (rbac would say so itself).
+	w.authz.m[kernel.Scope{CompanyID: 1, BranchID: bdg.ID}] = map[string]bool{application.PermManage: true}
+	// Inside a caller's transaction nothing is announced until it commits: the event is written
+	// with the removal, not beside it.
+	err := w.kit.Deps.Tx.Do(ctx, func(ctx context.Context) error {
+		if err := w.svc.Unplace(ctx, admin, budi, bdg.ID); err != nil {
+			return err
+		}
+		if n := len(w.kit.Published()); n != 0 {
+			t.Fatalf("%d events published before the transaction committed", n)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := w.kit.Published()
+	if len(pub) != 1 || pub[0].Name != "organization.user.unplaced" || pub[0].Version != 1 {
+		t.Fatalf("published = %+v", pub)
+	}
+	var p struct {
+		UserID     int64 `json:"user_id"`
+		CompanyID  int64 `json:"company_id"`
+		BranchID   int64 `json:"branch_id"`
+		UnplacedBy int64 `json:"unplaced_by"`
+	}
+	_ = json.Unmarshal(pub[0].Payload, &p)
+	if p.UserID != budi || p.CompanyID != 1 || p.BranchID != bdg.ID || p.UnplacedBy != admin {
+		t.Fatalf("payload = %+v", p)
+	}
+	var unplaced []kernel.AuditRecord
+	for _, r := range w.kit.Audit.Records() {
+		if r.Action == "user.unplaced" {
+			unplaced = append(unplaced, r)
+		}
+	}
+	if len(unplaced) != 1 || unplaced[0].Kind != kernel.AuditSecurity || unplaced[0].Data["branch_id"] != bdg.ID {
+		t.Fatalf("audit = %+v", unplaced)
+	}
+	// A placement that is not there: 404, and no event.
+	if err := w.svc.Unplace(ctx, admin, budi, bdg.ID); status(t, err) != http.StatusNotFound {
+		t.Fatalf("unplacing twice: %v", err)
+	}
+	if len(w.kit.Published()) != 1 {
+		t.Fatal("a refused unplacing announced something")
+	}
+	// Deactivating a branch or a company unplaces nobody: no event, PlacesOf still lists them.
+	_ = w.svc.SetBranchActive(ctx, bdg.ID, false)
+	other, _ := w.svc.CreateCompany(ctx, admin, application.CompanyInput{Code: "B", Name: "PT B", Timezone: "Asia/Jakarta"})
+	_ = w.svc.SetCompanyActive(ctx, other.ID, false)
+	for _, ev := range w.kit.Published() {
+		if ev.Name == "organization.user.unplaced" && ev.ID != pub[0].ID {
+			t.Fatalf("deactivating published %+v", ev)
+		}
+	}
+	if places, _ := w.svc.Places(context.Background(), admin); len(places) != 2 {
+		t.Fatalf("the creator of a deactivated company is still placed there: %+v", places)
+	}
+}

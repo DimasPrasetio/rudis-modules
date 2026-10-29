@@ -24,27 +24,28 @@ var (
 	ErrNameTaken = errors.New("role name already in use")
 )
 
-// Repository is the roles, role_permissions, and user_roles tables. Roles are defined once for
-// the app; who holds them is per company — across all of it (branch 0) or in one branch.
+// Repository is the roles, role_permissions, and user_roles tables. A role belongs to one
+// company; its members hold it there — across all of it (branch 0) or in one branch. Every
+// method works in the company it is given; only SystemGrantsOfUser looks across companies.
 type Repository interface {
 	// LockRole locks the role's row until the transaction in ctx ends — exclusively to change
 	// the role, shared to give it to someone — or reports ErrNotFound.
-	LockRole(ctx context.Context, id int64, exclusive bool) error
-	// RoleCompanies lists the companies where the role has members.
-	RoleCompanies(ctx context.Context, roleID int64) ([]int64, error)
+	LockRole(ctx context.Context, company, id int64, exclusive bool) error
 	// LockMembers is Members, locking the rows until the transaction in ctx ends.
 	LockMembers(ctx context.Context, company, roleID int64) ([]Assignment, error)
 	ListRoles(ctx context.Context, company int64) ([]domain.Role, error)
 	GetRole(ctx context.Context, company, id int64) (domain.Role, error)
-	RoleIDByName(ctx context.Context, name string) (int64, error)
-	CreateRole(ctx context.Context, name, description string, permissions []string) (int64, error)
-	UpdateRole(ctx context.Context, id int64, name, description string, permissions []string) error
-	DeleteRole(ctx context.Context, id int64) error
+	RoleIDByName(ctx context.Context, company int64, name string) (int64, error)
+	CreateRole(ctx context.Context, company int64, name, description string, isSystem bool, permissions []string) (int64, error)
+	UpdateRole(ctx context.Context, company, id int64, name, description string, permissions []string) error
+	DeleteRole(ctx context.Context, company, id int64) error
 	Members(ctx context.Context, company, roleID int64) ([]Assignment, error)
 	AddMember(ctx context.Context, company, branch, roleID, userID int64) error
 	RemoveMember(ctx context.Context, company, branch, roleID, userID int64) error
-	// GrantsOfUser is every permission the user holds, in every company.
-	GrantsOfUser(ctx context.Context, userID int64) ([]Grant, error)
+	// RolesOfUser lists the roles the user holds in the company, and where.
+	RolesOfUser(ctx context.Context, company, userID int64) ([]HeldRole, error)
+	// SystemGrantsOfUser is every permission the user holds, in every company.
+	SystemGrantsOfUser(ctx context.Context, userID int64) ([]Grant, error)
 }
 
 // Transactor runs fn in one transaction — the kernel's d.Tx.
@@ -64,6 +65,14 @@ type Scopes interface {
 // branch.
 type Assignment struct {
 	UserID   int64
+	BranchID int64
+}
+
+// HeldRole is one role a user holds in a company, and where.
+type HeldRole struct {
+	RoleID   int64
+	Name     string
+	IsSystem bool
 	BranchID int64
 }
 
@@ -106,7 +115,8 @@ type cached struct {
 	until  time.Time
 }
 
-// Auditor records changes to roles and members — the kernel's d.Audit.
+// Auditor records changes to roles and members — the kernel's d.Audit. Every one is a security
+// record, written inside the transaction that makes the change.
 type Auditor interface {
 	Record(ctx context.Context, e kernel.AuditEntry)
 }
@@ -117,6 +127,7 @@ func NewService(repo Repository, tx Transactor, scopes Scopes, users ports.UserD
 }
 
 func roleTarget(id int64) string { return fmt.Sprintf("role:%d", id) }
+func userTarget(id int64) string { return fmt.Sprintf("user:%d", id) }
 
 // Catalog is every permission that can be granted.
 func (s *Service) Catalog() []kernel.Permission { return s.catalog() }
@@ -124,10 +135,12 @@ func (s *Service) Catalog() []kernel.Permission { return s.catalog() }
 // company is the company the request works in (d.Auth resolved its scope).
 func company(ctx context.Context) int64 { return kernel.ScopeFrom(ctx).CompanyID }
 
+// ListRoles lists the active company's roles.
 func (s *Service) ListRoles(ctx context.Context) ([]domain.Role, error) {
 	return s.repo.ListRoles(ctx, company(ctx))
 }
 
+// GetRole returns the role — one of the active company's; another company's is not found.
 func (s *Service) GetRole(ctx context.Context, id int64) (domain.Role, error) {
 	r, err := s.repo.GetRole(ctx, company(ctx), id)
 	return r, notFound(err)
@@ -215,24 +228,11 @@ func rolePerms(r domain.Role) []string {
 	return r.Permissions
 }
 
-// mayEditRole reports whether actor may change or delete a role holding perms. Roles are
-// defined once for the app, so a change reaches every company where the role has members:
-// actor needs rbac.manage and perms company-wide in each of them, and in the active company.
-func (s *Service) mayEditRole(ctx context.Context, actor, roleID int64, perms []string) (bool, error) {
-	companies := []int64{company(ctx)}
-	if roleID != 0 {
-		others, err := s.repo.RoleCompanies(ctx, roleID)
-		if err != nil {
-			return false, err
-		}
-		companies = append(companies, others...)
-	}
-	for _, c := range companies {
-		if !s.holds(ctx, actor, c, 0, append([]string{domain.PermManage}, perms...)...) {
-			return false, nil
-		}
-	}
-	return true, nil
+// mayDefineRole reports whether actor may define, change, or delete a role holding perms in
+// the active company: rbac.manage and perms, company-wide there. A role belongs to one company,
+// so that is the only place a change reaches.
+func (s *Service) mayDefineRole(ctx context.Context, actor int64, perms []string) bool {
+	return s.holds(ctx, actor, company(ctx), 0, append([]string{domain.PermManage}, perms...)...)
 }
 
 // UsePlacements turns on placement-aware Covers and member search — set once, while the app is
@@ -306,88 +306,92 @@ func (s *Service) belongs(ctx context.Context, target int64, theirs []Grant) ([]
 	return out, nil
 }
 
+// CreateRole defines a role in the active company. The role and its audit record are written
+// in one transaction.
 func (s *Service) CreateRole(ctx context.Context, actor int64, in RoleInput) (domain.Role, error) {
 	in, err := s.clean(in)
 	if err != nil {
 		return domain.Role{}, err
 	}
-	if ok, err := s.mayEditRole(ctx, actor, 0, in.Permissions); err != nil || !ok {
-		return domain.Role{}, beyondOwn(err)
+	if !s.mayDefineRole(ctx, actor, in.Permissions) {
+		return domain.Role{}, errBeyondOwn
 	}
-	id, err := s.repo.CreateRole(ctx, in.Name, in.Description, in.Permissions)
+	var id int64
+	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		var err error
+		if id, err = s.repo.CreateRole(ctx, company(ctx), in.Name, in.Description, false, in.Permissions); err != nil {
+			return nameTaken(err)
+		}
+		s.changed(ctx)
+		s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "rbac", Action: "role.created", Target: roleTarget(id), Summary: "Membuat peran " + in.Name,
+			Data: map[string]any{"permissions": in.Permissions}})
+		return nil
+	})
 	if err != nil {
-		return domain.Role{}, nameTaken(err)
+		return domain.Role{}, err
 	}
-	s.changed(ctx)
-	s.audit.Record(ctx, kernel.AuditEntry{Module: "rbac", Action: "role.created", Target: roleTarget(id), Summary: "Membuat peran " + in.Name,
-		Data: map[string]any{"permissions": in.Permissions}})
 	return s.GetRole(ctx, id)
 }
 
-// UpdateRole changes a role. The role's row stays locked from the check to the write, so nobody
-// gives it to someone in another company in between — the check covers every company it reaches.
+// UpdateRole changes a role of the active company. The role's row stays locked from the check
+// to the write, so nobody gives it to someone in between.
 func (s *Service) UpdateRole(ctx context.Context, actor, id int64, in RoleInput) (domain.Role, error) {
 	in, err := s.clean(in)
 	if err != nil {
 		return domain.Role{}, err
 	}
-	var current domain.Role
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
-		if err := s.repo.LockRole(ctx, id, true); err != nil {
+		if err := s.repo.LockRole(ctx, company(ctx), id, true); err != nil {
 			return notFound(err)
 		}
-		var err error
-		if current, err = s.GetRole(ctx, id); err != nil {
+		current, err := s.GetRole(ctx, id)
+		if err != nil {
 			return err
 		}
 		if current.IsSystem {
 			return apperror.Conflict("Peran Administrator selalu memegang semua izin dan tidak dapat diubah")
 		}
-		if ok, err := s.mayEditRole(ctx, actor, id, append(rolePerms(current), in.Permissions...)); err != nil || !ok {
-			return beyondOwn(err)
+		if !s.mayDefineRole(ctx, actor, append(rolePerms(current), in.Permissions...)) {
+			return errBeyondOwn
 		}
-		if err := s.repo.UpdateRole(ctx, id, in.Name, in.Description, in.Permissions); err != nil {
+		if err := s.repo.UpdateRole(ctx, company(ctx), id, in.Name, in.Description, in.Permissions); err != nil {
 			return nameTaken(notFound(err))
 		}
 		s.changed(ctx)
+		s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "rbac", Action: "role.updated", Target: roleTarget(id), Summary: "Mengubah peran " + in.Name,
+			Data: map[string]any{"name": map[string]any{"before": current.Name, "after": in.Name}, "permissions": map[string]any{"before": current.Permissions, "after": in.Permissions}}})
 		return nil
 	})
 	if err != nil {
 		return domain.Role{}, err
 	}
-	s.audit.Record(ctx, kernel.AuditEntry{Module: "rbac", Action: "role.updated", Target: roleTarget(id), Summary: "Mengubah peran " + in.Name,
-		Data: map[string]any{"name": map[string]any{"before": current.Name, "after": in.Name}, "permissions": map[string]any{"before": current.Permissions, "after": in.Permissions}}})
 	return s.GetRole(ctx, id)
 }
 
+// DeleteRole removes a role of the active company, and with it every membership of it.
 func (s *Service) DeleteRole(ctx context.Context, actor, id int64) error {
-	var r domain.Role
-	err := s.tx.Do(ctx, func(ctx context.Context) error {
-		if err := s.repo.LockRole(ctx, id, true); err != nil {
+	return s.tx.Do(ctx, func(ctx context.Context) error {
+		if err := s.repo.LockRole(ctx, company(ctx), id, true); err != nil {
 			return notFound(err)
 		}
-		var err error
-		if r, err = s.GetRole(ctx, id); err != nil {
+		r, err := s.GetRole(ctx, id)
+		if err != nil {
 			return err
 		}
 		if r.IsSystem {
 			return apperror.Conflict("Peran Administrator tidak dapat dihapus")
 		}
-		if ok, err := s.mayEditRole(ctx, actor, id, rolePerms(r)); err != nil || !ok {
-			return beyondOwn(err)
+		if !s.mayDefineRole(ctx, actor, rolePerms(r)) {
+			return errBeyondOwn
 		}
-		if err := s.repo.DeleteRole(ctx, id); err != nil {
+		if err := s.repo.DeleteRole(ctx, company(ctx), id); err != nil {
 			return notFound(err)
 		}
 		s.changed(ctx)
+		s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "rbac", Action: "role.deleted", Target: roleTarget(id), Summary: "Menghapus peran " + r.Name,
+			Data: map[string]any{"permissions": r.Permissions, "members": r.MemberCount}})
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-	s.audit.Record(ctx, kernel.AuditEntry{Module: "rbac", Action: "role.deleted", Target: roleTarget(id), Summary: "Menghapus peran " + r.Name,
-		Data: map[string]any{"permissions": r.Permissions}})
-	return nil
 }
 
 // Members returns who holds the role in the active company, and where.
@@ -448,14 +452,13 @@ func (s *Service) AddMember(ctx context.Context, actor, roleID, userID, branch i
 	if err != nil {
 		return err
 	}
-	var r domain.Role
-	err = s.tx.Do(ctx, func(ctx context.Context) error {
+	return s.tx.Do(ctx, func(ctx context.Context) error {
 		// Shared: the role cannot change between the check and the grant.
-		if err := s.repo.LockRole(ctx, roleID, false); err != nil {
+		if err := s.repo.LockRole(ctx, company(ctx), roleID, false); err != nil {
 			return notFound(err)
 		}
-		var err error
-		if r, err = s.GetRole(ctx, roleID); err != nil {
+		r, err := s.GetRole(ctx, roleID)
+		if err != nil {
 			return err
 		}
 		if !s.holds(ctx, actor, company(ctx), branch, append([]string{domain.PermManage}, rolePerms(r)...)...) {
@@ -465,14 +468,10 @@ func (s *Service) AddMember(ctx context.Context, actor, roleID, userID, branch i
 			return err
 		}
 		s.changed(ctx)
+		s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "rbac", Action: "role.member_added", Target: userTarget(userID),
+			Summary: "Memberi peran " + r.Name + " di " + where(branch), Data: map[string]any{"role_id": roleID, "role": r.Name, "branch_id": branch}})
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-	s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "rbac", Action: "role.member_added", Target: fmt.Sprintf("user:%d", userID),
-		Summary: "Memberi peran " + r.Name + " di " + where(branch), Data: map[string]any{"role_id": roleID, "role": r.Name, "branch_id": branch}})
-	return nil
 }
 
 // RemoveMember takes the role away there. The company's last active company-wide
@@ -480,15 +479,14 @@ func (s *Service) AddMember(ctx context.Context, actor, roleID, userID, branch i
 // removal run in one transaction holding the role's rows, so two removals at once cannot both
 // pass it.
 func (s *Service) RemoveMember(ctx context.Context, actor, roleID, userID, branch int64) error {
-	var r domain.Role
-	err := s.tx.Do(ctx, func(ctx context.Context) error {
+	return s.tx.Do(ctx, func(ctx context.Context) error {
 		// Shared, as in AddMember: the role cannot gain a permission between the check and the
 		// removal. The role's row comes before user_roles, as everywhere.
-		if err := s.repo.LockRole(ctx, roleID, false); err != nil {
+		if err := s.repo.LockRole(ctx, company(ctx), roleID, false); err != nil {
 			return notFound(err)
 		}
-		var err error
-		if r, err = s.GetRole(ctx, roleID); err != nil {
+		r, err := s.GetRole(ctx, roleID)
+		if err != nil {
 			return err
 		}
 		if !s.holds(ctx, actor, company(ctx), branch, append([]string{domain.PermManage}, rolePerms(r)...)...) {
@@ -520,14 +518,50 @@ func (s *Service) RemoveMember(ctx context.Context, actor, roleID, userID, branc
 			return notFound(err)
 		}
 		s.changed(ctx)
+		s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "rbac", Action: "role.member_removed", Target: userTarget(userID),
+			Summary: "Mencabut peran " + r.Name + " di " + where(branch), Data: map[string]any{"role_id": roleID, "role": r.Name, "branch_id": branch}})
 		return nil
 	})
-	if err != nil {
-		return err
+}
+
+// RevokeAt takes away every role the user holds in exactly that unit of the company — across
+// it (branch 0) or in one branch — the reaction to organization.user.unplaced: a placement
+// taken away leaves no role behind. Each removal is a security record in that unit. Nothing
+// held there: nothing happens. The last-Administrator rule does not apply — the person can no
+// longer work there; the home company's Administrators appoint a new one (PlaceInCompany).
+func (s *Service) RevokeAt(ctx context.Context, userID, companyID, branch int64) error {
+	if companyID < 1 || userID < 1 || branch < 0 {
+		return fmt.Errorf("rbac: company %d branch %d user %d: not a unit and a user", companyID, branch, userID)
 	}
-	s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "rbac", Action: "role.member_removed", Target: fmt.Sprintf("user:%d", userID),
-		Summary: "Mencabut peran " + r.Name + " di " + where(branch), Data: map[string]any{"role_id": roleID, "role": r.Name, "branch_id": branch}})
-	return nil
+	ctx = kernel.WithScope(ctx, kernel.Scope{CompanyID: companyID, BranchID: branch})
+	return s.tx.Do(ctx, func(ctx context.Context) error {
+		held, err := s.repo.RolesOfUser(ctx, companyID, userID)
+		if err != nil {
+			return err
+		}
+		for _, h := range held {
+			if h.BranchID != branch {
+				continue
+			}
+			if err := s.repo.LockRole(ctx, companyID, h.RoleID, false); err != nil {
+				if errors.Is(err, ErrNotFound) {
+					continue // deleted meanwhile, with its memberships
+				}
+				return err
+			}
+			if err := s.repo.RemoveMember(ctx, companyID, branch, h.RoleID, userID); err != nil {
+				if errors.Is(err, ErrNotFound) {
+					continue // taken away meanwhile
+				}
+				return err
+			}
+			s.changed(ctx)
+			s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "rbac", Action: "role.member_removed", Target: userTarget(userID),
+				Summary: "Mencabut peran " + h.Name + " karena penempatan di " + where(branch) + " dicabut",
+				Data:    map[string]any{"role_id": h.RoleID, "role": h.Name, "company_id": companyID, "branch_id": branch, "reason": "unplaced"}})
+		}
+		return nil
+	})
 }
 
 // SearchUsers finds users to give a role to.
@@ -558,24 +592,102 @@ func (s *Service) SearchUsers(ctx context.Context, q string) ([]ports.User, erro
 	return out, nil
 }
 
-// AppointFounder makes the creator of a new company its Administrator across it — the reaction
-// to organization.company.created. Repeating it changes nothing.
+// adminRole is the company's Administrator role, created when the company has none yet (company
+// 1's comes from the migration; another company's is made with the company). Inside the
+// caller's transaction.
+func (s *Service) adminRole(ctx context.Context, companyID int64) (int64, error) {
+	id, err := s.repo.RoleIDByName(ctx, companyID, domain.AdminRole)
+	if err == nil || !errors.Is(err, ErrNotFound) {
+		return id, err
+	}
+	id, err = s.repo.CreateRole(ctx, companyID, domain.AdminRole, domain.AdminDescription, true, []string{domain.Wildcard})
+	if errors.Is(err, ErrNameTaken) { // made at the same moment by another delivery
+		return s.repo.RoleIDByName(ctx, companyID, domain.AdminRole)
+	}
+	if err != nil {
+		return 0, err
+	}
+	s.changed(ctx)
+	s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "rbac", Action: "role.created", Target: roleTarget(id), Summary: "Membuat peran Administrator perusahaan baru",
+		Data: map[string]any{"permissions": []string{domain.Wildcard}, "company_id": companyID}})
+	return id, nil
+}
+
+// AppointFounder gives a new company its own Administrator role and makes the company's creator
+// hold it across the company — the reaction to organization.company.created, in one transaction.
+// Repeating it changes nothing.
 func (s *Service) AppointFounder(ctx context.Context, companyID, userID int64) error {
 	if companyID < 1 || userID < 1 {
 		return fmt.Errorf("rbac: company %d founder %d: not a company and a user", companyID, userID)
 	}
-	adminID, err := s.repo.RoleIDByName(ctx, domain.AdminRole)
-	if err != nil {
-		return err
-	}
-	if err := s.repo.AddMember(ctx, companyID, 0, adminID, userID); err != nil {
-		return err
-	}
-	s.changed(ctx)
 	// Recorded in the new company: that is where the Administrator now acts.
-	s.audit.Record(kernel.WithScope(ctx, kernel.Scope{CompanyID: companyID}), kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "rbac", Action: "role.member_added", Target: fmt.Sprintf("user:%d", userID),
-		Summary: "Memberi peran Administrator kepada pembuat perusahaan", Data: map[string]any{"role_id": adminID, "role": domain.AdminRole, "company_id": companyID, "branch_id": 0}})
-	return nil
+	ctx = kernel.WithScope(ctx, kernel.Scope{CompanyID: companyID})
+	return s.tx.Do(ctx, func(ctx context.Context) error {
+		adminID, err := s.adminRole(ctx, companyID)
+		if err != nil {
+			return err
+		}
+		members, err := s.repo.Members(ctx, companyID, adminID)
+		if err != nil {
+			return err
+		}
+		for _, m := range members {
+			if m.UserID == userID && m.BranchID == 0 {
+				return nil // already appointed: a delivery repeated
+			}
+		}
+		if err := s.repo.AddMember(ctx, companyID, 0, adminID, userID); err != nil {
+			return err
+		}
+		s.changed(ctx)
+		s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "rbac", Action: "role.member_added", Target: userTarget(userID),
+			Summary: "Memberi peran Administrator kepada pembuat perusahaan", Data: map[string]any{"role_id": adminID, "role": domain.AdminRole, "company_id": companyID, "branch_id": 0}})
+		return nil
+	})
+}
+
+// Holders lists who holds the role named name in the active company, in every branch —
+// ErrNotFound when the company has no such role (contracts.RoleHolders).
+func (s *Service) Holders(ctx context.Context, name string) ([]Assignment, error) {
+	id, err := s.repo.RoleIDByName(ctx, company(ctx), strings.TrimSpace(name))
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.Members(ctx, company(ctx), id)
+}
+
+// RoleNamesOf lists the names of the roles the user holds where the request works: in a
+// branch, the company-wide roles and that branch's; at the whole company, company-wide roles
+// only (contracts.RoleHolders).
+func (s *Service) RoleNamesOf(ctx context.Context, userID int64) ([]string, error) {
+	sc := kernel.ScopeFrom(ctx)
+	held, err := s.repo.RolesOfUser(ctx, sc.CompanyID, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := []string{}
+	seen := map[string]bool{}
+	for _, h := range held {
+		if (h.BranchID == 0 || (sc.BranchID != 0 && h.BranchID == sc.BranchID)) && !seen[h.Name] {
+			seen[h.Name] = true
+			out = append(out, h.Name)
+		}
+	}
+	return out, nil
+}
+
+// RoleNames lists the active company's role names, the Administrator role first
+// (contracts.RoleHolders).
+func (s *Service) RoleNames(ctx context.Context) ([]string, error) {
+	roles, err := s.repo.ListRoles(ctx, company(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(roles))
+	for i, r := range roles {
+		out[i] = r.Name
+	}
+	return out, nil
 }
 
 // grants returns what the user holds in every company, cached for a short time; every change to
@@ -589,7 +701,7 @@ func (s *Service) grants(ctx context.Context, userID int64) ([]Grant, error) {
 	if ok && s.now().Before(c.until) {
 		return c.grants, nil
 	}
-	grants, err := s.repo.GrantsOfUser(ctx, userID)
+	grants, err := s.repo.SystemGrantsOfUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -664,42 +776,55 @@ func (s *Service) Units(ctx context.Context, userID int64, permission string) (k
 	return u, nil
 }
 
-// Bootstrap gives the Administrator role to the user with email when no active user holds it
-// — how a fresh install gets someone who can manage roles, and how an install whose only
-// administrators were deactivated or removed gets one back.
+// Bootstrap gives the home company's Administrator role to the user with email when no active
+// user holds it — how a fresh install gets someone who can manage roles, and how an install
+// whose only administrators were deactivated or removed gets one back. The grant and its
+// security record are written in one transaction, in the home company.
 func (s *Service) Bootstrap(ctx context.Context, email string) (assigned bool, err error) {
-	adminID, err := s.repo.RoleIDByName(ctx, domain.AdminRole)
-	if err != nil {
-		return false, err
-	}
-	admins, err := s.repo.Members(ctx, kernel.DefaultCompany, adminID)
-	if err != nil {
-		return false, err
-	}
-	for _, a := range admins {
-		if a.BranchID != 0 {
-			continue
+	ctx = kernel.WithScope(ctx, kernel.Scope{CompanyID: kernel.DefaultCompany})
+	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		assigned = false
+		adminID, err := s.repo.RoleIDByName(ctx, kernel.DefaultCompany, domain.AdminRole)
+		if err != nil {
+			return err
 		}
-		u, err := s.users.Get(ctx, a.UserID)
-		if err == nil && u.IsActive {
-			return false, nil
+		if err := s.repo.LockRole(ctx, kernel.DefaultCompany, adminID, false); err != nil {
+			return err
 		}
-		if err != nil && !errors.Is(err, ports.ErrUserNotFound) {
-			return false, err
+		admins, err := s.repo.LockMembers(ctx, kernel.DefaultCompany, adminID)
+		if err != nil {
+			return err
 		}
-	}
-	u, err := s.users.FindByEmail(ctx, email)
-	if err != nil {
-		return false, err
-	}
-	if !u.IsActive {
-		return false, errors.New("the bootstrap administrator's account is deactivated")
-	}
-	if err := s.repo.AddMember(ctx, kernel.DefaultCompany, 0, adminID, u.ID); err != nil {
-		return false, err
-	}
-	s.invalidate()
-	return true, nil
+		for _, a := range admins {
+			if a.BranchID != 0 {
+				continue
+			}
+			u, err := s.users.Get(ctx, a.UserID)
+			if err == nil && u.IsActive {
+				return nil
+			}
+			if err != nil && !errors.Is(err, ports.ErrUserNotFound) {
+				return err
+			}
+		}
+		u, err := s.users.FindByEmail(ctx, email)
+		if err != nil {
+			return err
+		}
+		if !u.IsActive {
+			return errors.New("the bootstrap administrator's account is deactivated")
+		}
+		if err := s.repo.AddMember(ctx, kernel.DefaultCompany, 0, adminID, u.ID); err != nil {
+			return err
+		}
+		s.changed(ctx)
+		// By nobody (actor 0): the system did it, at start.
+		s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "rbac", Action: "role.member_added", Target: userTarget(u.ID),
+			Summary: "Memberi peran Administrator saat mulai (bootstrap)", Data: map[string]any{"role_id": adminID, "role": domain.AdminRole, "email": email, "branch_id": 0}})
+		assigned = true
+		return nil
+	})
+	return assigned, err
 }
 
 // changed clears the cache now and again once the change commits — a lookup in between would
@@ -714,14 +839,6 @@ func (s *Service) invalidate() {
 	s.cache = map[grantKey]cached{}
 	s.gen++
 	s.mu.Unlock()
-}
-
-// beyondOwn is errBeyondOwn, or the lookup error that kept the check from answering.
-func beyondOwn(err error) error {
-	if err != nil {
-		return err
-	}
-	return errBeyondOwn
 }
 
 func notFound(err error) error {

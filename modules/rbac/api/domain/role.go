@@ -9,9 +9,12 @@ import (
 )
 
 const (
-	// AdminRole is created by the migration, holds Wildcard, and can be neither changed nor
-	// deleted — only its members can.
+	// AdminRole is every company's system role: it holds Wildcard and can be neither changed nor
+	// deleted — only its members can. Company 1's is created by the migration; another
+	// company's when the company is (AppointFounder).
 	AdminRole = "Administrator"
+	// AdminDescription is the Administrator role's description, as migration 002 words it.
+	AdminDescription = "Semua izin, termasuk yang ditambahkan kemudian"
 	// Wildcard grants every permission, including ones modules declare later.
 	Wildcard = "*"
 	// PermManage is the permission to manage roles and who holds them.
@@ -21,9 +24,11 @@ const (
 	MaxDescriptionLength = 255
 )
 
-// Role is a named set of permissions given to users.
+// Role is a named set of permissions given to users. It belongs to one company: its members
+// hold it there, across the company or in one of its branches.
 type Role struct {
 	ID          int64
+	CompanyID   int64
 	Name        string
 	Description string
 	IsSystem    bool

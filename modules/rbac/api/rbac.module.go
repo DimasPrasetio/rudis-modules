@@ -1,11 +1,13 @@
 // Package rbac decides who may do what: roles hold permissions that modules declared
-// (d.Authz.Declare), users hold roles. It fills the kernel's d.Authz, needs one port —
-// ports.UserDirectory — and imports no module.
+// (d.Authz.Declare), users hold roles — per company, across it or in one branch. It fills the
+// kernel's d.Authz, offers contracts.RoleHolders, needs one port — ports.UserDirectory — and
+// imports no module.
 package rbac
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"__GO_MODULE__/internal/config"
 	"__GO_MODULE__/internal/kernel"
 	"__GO_MODULE__/internal/modules/rbac/application"
+	"__GO_MODULE__/internal/modules/rbac/contracts"
 	"__GO_MODULE__/internal/modules/rbac/infrastructure"
 	"__GO_MODULE__/internal/modules/rbac/ports"
 	"__GO_MODULE__/internal/modules/rbac/presentation"
@@ -53,8 +56,9 @@ func New(d *kernel.Deps, users ports.UserDirectory) (*Module, error) {
 // (an organization module) is built.
 func (m *Module) UsePlacements(p ports.Placements) { m.svc.UsePlacements(p) }
 
-// OnCompanyCreated makes a new company's creator its Administrator — the subscriber of
-// organization.company.created (v1), wired in registry.go from module.json "listens".
+// OnCompanyCreated gives a new company its Administrator role and makes the company's creator
+// hold it — the subscriber of organization.company.created (v1), wired in registry.go from
+// module.json "listens".
 func (m *Module) OnCompanyCreated(ctx context.Context, ev kernel.Event) error {
 	var p struct {
 		CompanyID int64 `json:"company_id"`
@@ -64,6 +68,21 @@ func (m *Module) OnCompanyCreated(ctx context.Context, ev kernel.Event) error {
 		return fmt.Errorf("rbac: %s: %w", ev.Name, err)
 	}
 	return m.svc.AppointFounder(ctx, p.CompanyID, p.CreatedBy)
+}
+
+// OnUserUnplaced takes away every role the user held in the unit they were unplaced from —
+// the subscriber of organization.user.unplaced (v1), wired in registry.go from module.json
+// "listens". Nothing held there: nothing to do.
+func (m *Module) OnUserUnplaced(ctx context.Context, ev kernel.Event) error {
+	var p struct {
+		UserID    int64 `json:"user_id"`
+		CompanyID int64 `json:"company_id"`
+		BranchID  int64 `json:"branch_id"`
+	}
+	if err := json.Unmarshal(ev.Payload, &p); err != nil {
+		return fmt.Errorf("rbac: %s: %w", ev.Name, err)
+	}
+	return m.svc.RevokeAt(ctx, p.UserID, p.CompanyID, p.BranchID)
 }
 
 // Routes mounts /api/v1/rbac.
@@ -92,3 +111,29 @@ func (a authorizer) Units(ctx context.Context, permission string) (kernel.Units,
 	}
 	return a.m.svc.Units(ctx, id, permission)
 }
+
+// Client returns the module's public contract: who holds which role in the company ctx works in.
+func (m *Module) Client() contracts.RoleHolders { return client{m.svc} }
+
+type client struct{ svc *application.Service }
+
+func (c client) Holders(ctx context.Context, name string) ([]contracts.Holder, error) {
+	held, err := c.svc.Holders(ctx, name)
+	if errors.Is(err, application.ErrNotFound) {
+		return nil, contracts.ErrRoleNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make([]contracts.Holder, len(held))
+	for i, h := range held {
+		out[i] = contracts.Holder{UserID: h.UserID, BranchID: h.BranchID}
+	}
+	return out, nil
+}
+
+func (c client) RolesOf(ctx context.Context, userID int64) ([]string, error) {
+	return c.svc.RoleNamesOf(ctx, userID)
+}
+
+func (c client) Roles(ctx context.Context) ([]string, error) { return c.svc.RoleNames(ctx) }

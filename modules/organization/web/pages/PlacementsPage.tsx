@@ -140,7 +140,7 @@ export default function PlacementsPage() {
         open={removing !== null}
         onOpenChange={(open) => !open && setRemoving(null)}
         title={`Cabut penempatan ${removing?.name || "pengguna ini"}?`}
-        description={`${removing ? where(removing) : ""}: ia tidak bisa bekerja di sini lagi mulai permintaan berikutnya. Akun dan perannya tetap ada.`}
+        description={`${removing ? where(removing) : ""}: ia tidak bisa bekerja di sini lagi mulai permintaan berikutnya, dan peran yang dipegangnya di sini ikut dicabut. Akunnya, dan perannya di tempat lain, tetap ada.`}
         confirmLabel="Cabut penempatan"
         onConfirm={async () => {
           if (!removing) return;

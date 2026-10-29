@@ -1,6 +1,6 @@
 {
   "id": "organization",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "kind": "fullstack",
   "title": "Organization (companies, branches, placements)",
   "summary": "Several companies and their branches in one app: who is placed where, a company/branch picker in the header, and the kernel's scope resolver (d.Scope) — every request works in one company and, optionally, one branch, in its time zone. Offers OrganizationClient.",
@@ -68,6 +68,11 @@
       "name": "organization.company.created",
       "version": 1,
       "description": "A company was created: {company_id, code, name, created_by}. Its creator is already placed across it."
+    },
+    {
+      "name": "organization.user.unplaced",
+      "version": 1,
+      "description": "A placement was taken away: {user_id, company_id, branch_id, unplaced_by} (branch_id 0: across the company). Published in the transaction that removes it; rbac revokes the roles held in that unit. Deactivating a company or branch unplaces nobody and publishes nothing."
     }
   ],
   "env": [],
