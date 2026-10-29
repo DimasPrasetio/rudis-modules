@@ -1,9 +1,9 @@
 {
   "id": "ui-data",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "kind": "ui",
   "title": "UI data kit",
-  "summary": "Lists and tables: DataTable (sort, selection with a bulk-action bar, column chooser, built-in loading/empty/error), Pagination, Toolbar with filter chips, FilterBar, SearchInput (debounced), ActionMenu (⋯), NavTabs.",
+  "summary": "Lists and tables: DataTable (row identity as a real link, sort, selection with a bulk-action bar also across pages, column chooser, loading/empty/error states that keep the header, card layout on phones), Pagination, Toolbar with filter chips, FilterBar, SearchInput (debounced), ActionMenu (⋯), NavTabs.",
   "when_to_use": [
     "Any screen that lists records."
   ],

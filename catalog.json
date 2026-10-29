@@ -3,10 +3,10 @@
   "modules": [
     {
       "id": "app-shell",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "kind": "web",
       "title": "App shell",
-      "summary": "The frame around protected pages: collapsible sidebar built from every module's nav, inset canvas, breadcrumb header, and slots for a user menu.",
+      "summary": "The frame around protected pages: collapsible sidebar built from every module's nav, inset canvas, breadcrumb header (a page's own crumbs lead back to its list), and slots for a user menu.",
       "when_to_use": [
         "Back-office and admin apps with several sections reached from a sidebar."
       ],
@@ -770,10 +770,10 @@
     },
     {
       "id": "ui-core",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "kind": "ui",
       "title": "UI core kit",
-      "summary": "Bingkai Navy foundation every screen uses: the restyled shadcn primitives, page layout (Page, PageHeader, SectionCard, SummaryCard), StatusBadge with fixed tones, Notice, empty/error/404 states, skeletons, DescriptionList, Money/Qty/DocNumber, Modal, FormSheet, and id-ID formatters.",
+      "summary": "Bingkai Navy foundation every screen uses: the restyled shadcn primitives, page layout (Page, PageHeader with crumbs, SectionCard, SummaryCard), StatusBadge with fixed tones, Notice, empty/error/404 states, skeletons, DescriptionList, Money/Qty/DocNumber/DateTimeValue, Modal, FormSheet, id-ID formatters in the company's time zone, density, full screen, and idle reset.",
       "when_to_use": [
         "Any project with screens — every other kit and every module with a frontend builds on it."
       ],
@@ -797,10 +797,10 @@
     },
     {
       "id": "ui-data",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "kind": "ui",
       "title": "UI data kit",
-      "summary": "Lists and tables: DataTable (sort, selection with a bulk-action bar, column chooser, built-in loading/empty/error), Pagination, Toolbar with filter chips, FilterBar, SearchInput (debounced), ActionMenu (⋯), NavTabs.",
+      "summary": "Lists and tables: DataTable (row identity as a real link, sort, selection with a bulk-action bar also across pages, column chooser, loading/empty/error states that keep the header, card layout on phones), Pagination, Toolbar with filter chips, FilterBar, SearchInput (debounced), ActionMenu (⋯), NavTabs.",
       "when_to_use": [
         "Any screen that lists records."
       ],
@@ -990,15 +990,16 @@
   "presets": [
     {
       "id": "bingkai-navy",
-      "version": "0.1.2",
+      "version": "0.2.0",
       "title": "Bingkai Navy",
-      "summary": "Dense back-office look: dark-navy frame around a light canvas, navy brand, Inter + Plus Jakarta Sans + Geist Mono, 14px base.",
+      "summary": "Dense back-office look: dark-navy frame around a light canvas, navy brand, Inter + Plus Jakarta Sans + Geist Mono, 14px base; a touch density (44px controls) for POS and kiosk screens of the same app.",
       "when_to_use": [
         "Back-office and admin apps used for hours a day on desktop: ERP, inventory, finance, HR, internal tools.",
-        "Data-dense screens: tables, documents, forms with many fields."
+        "Data-dense screens: tables, documents, forms with many fields.",
+        "Touch-first screens of such an app — POS on a tablet, attendance or visitor kiosk, queue display, kitchen screen — with the touch density (ui-core setDensity(\"touch\")), not a separate preset."
       ],
       "when_not_to_use": [
-        "Public or marketing pages, consumer apps, and touch-first screens (POS on a tablet): research their own direction."
+        "Public or marketing pages and consumer apps: research their own direction."
       ]
     }
   ]

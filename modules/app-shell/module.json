@@ -1,9 +1,9 @@
 {
   "id": "app-shell",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "kind": "web",
   "title": "App shell",
-  "summary": "The frame around protected pages: collapsible sidebar built from every module's nav, inset canvas, breadcrumb header, and slots for a user menu.",
+  "summary": "The frame around protected pages: collapsible sidebar built from every module's nav, inset canvas, breadcrumb header (a page's own crumbs lead back to its list), and slots for a user menu.",
   "when_to_use": [
     "Back-office and admin apps with several sections reached from a sidebar."
   ],

@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
+import { clearBreadcrumbs, setBreadcrumbs } from "@/shared/lib/breadcrumbs";
+import type { Crumb } from "@/shared/lib/breadcrumbs";
 
 /**
  * The app's name, read once from index.html's <title> before any page renames the tab, and kept
@@ -38,11 +40,32 @@ export interface PageHeaderProps {
   actions?: ReactNode;
   /** A band under the header, e.g. tabs or a stepper. */
   children?: ReactNode;
+  /**
+   * The shell's breadcrumb while this page is shown — a way back to the list:
+   * `[{ label: "Pelanggan", to: "/customers" }, { label: customer.name }]`. Without it the shell
+   * derives one from the navigation.
+   */
+  crumbs?: Crumb[];
+}
+
+/**
+ * Sets the shell's breadcrumb while mounted (shared/lib/breadcrumbs.ts) and clears it on leave,
+ * so a page without crumbs gets the navigation-derived one.
+ */
+export function useCrumbs(crumbs: Crumb[] | undefined) {
+  // Pages build the array on every render; its content is what matters.
+  const key = crumbs ? JSON.stringify(crumbs) : null;
+  useEffect(() => {
+    if (!key) return;
+    setBreadcrumbs(JSON.parse(key) as Crumb[]);
+    return clearBreadcrumbs;
+  }, [key]);
 }
 
 /** The page's one <h1> — the shell's breadcrumb never is one. */
-export function PageHeader({ title, description, meta, subtitle, actions, children }: PageHeaderProps) {
+export function PageHeader({ title, description, meta, subtitle, actions, children, crumbs }: PageHeaderProps) {
   usePageTitle(title);
+  useCrumbs(crumbs);
   return (
     <div className="page-header">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
