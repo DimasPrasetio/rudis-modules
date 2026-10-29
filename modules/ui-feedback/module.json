@@ -1,9 +1,9 @@
 {
   "id": "ui-feedback",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "kind": "ui",
   "title": "UI feedback kit",
-  "summary": "Telling people what happened: toasts (notify), ConfirmDialog, ReasonDialog, a global loading bar for running requests, and an error boundary with a crash card — mounted once through its provider.",
+  "summary": "Telling people what happened: toasts (notify, with an undoable one), Banner, ConfirmDialog, ReasonDialog, a global loading bar for running requests, and an error boundary with a crash card — mounted once through its provider.",
   "when_to_use": [
     "Every app with a frontend: confirmations, toasts, and a crash screen instead of a blank page."
   ],

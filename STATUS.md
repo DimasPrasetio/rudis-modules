@@ -35,9 +35,9 @@ or the testbed's scenarios without touching it.
 | [taxid](modules/taxid/README.md) | gokit | 0.2.0 | 6 | — | documents |
 | [ui-core](modules/ui-core/README.md) | ui | 0.5.0 | 6 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
 | [ui-data](modules/ui-data/README.md) | ui | 0.2.1 | 3 | — | full, no-rbac, users-alone, lifecycle, organization, documents |
-| [ui-feedback](modules/ui-feedback/README.md) | ui | 0.1.0 | 3 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
-| [ui-forms](modules/ui-forms/README.md) | ui | 0.3.0 | 3 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
-| [ui-gallery](modules/ui-gallery/README.md) | web | 0.1.2 | 3 | — | full, lifecycle |
+| [ui-feedback](modules/ui-feedback/README.md) | ui | 0.2.0 | 3 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
+| [ui-forms](modules/ui-forms/README.md) | ui | 0.4.0 | 3 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
+| [ui-gallery](modules/ui-gallery/README.md) | web | 0.2.0 | 3 | — | full, lifecycle |
 | [users](modules/users/README.md) | fullstack | 0.8.0 | 6 | — | full, no-rbac, users-alone, lifecycle, organization, documents |
 
 | Preset | Version |
