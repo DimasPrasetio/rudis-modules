@@ -1,5 +1,6 @@
-// Package users manages the people who can sign in. It offers contracts.UserClient and needs
-// nothing from other modules; its routes are guarded through the kernel's d.Authz.
+// Package users manages the people who can sign in. It offers contracts.UserClient, announces
+// accounts' lifecycle through d.Events (users.user.*), and needs nothing from other modules;
+// its routes are guarded through the kernel's d.Authz.
 package users
 
 import (
@@ -36,7 +37,7 @@ func New(d *kernel.Deps) (*Module, error) {
 		kernel.Permission{Name: presentation.PermRead, Module: "users", Description: "Melihat daftar pengguna"},
 		kernel.Permission{Name: presentation.PermManage, Module: "users", Description: "Menambah, mengubah, dan menonaktifkan pengguna"},
 	)
-	svc := application.NewService(infrastructure.NewRepository(d.Tx), d.Tx, infrastructure.BcryptHasher{}, d.Authz, d.Audit)
+	svc := application.NewService(infrastructure.NewRepository(d.Tx), d.Tx, d.Events, infrastructure.BcryptHasher{}, d.Authz, d.Audit)
 	m := &Module{svc: svc, handler: presentation.NewHandler(svc, d.Auth, d.Authz)}
 
 	email, password := config.Get("USERS_BOOTSTRAP_EMAIL", ""), config.Get("USERS_BOOTSTRAP_PASSWORD", "")

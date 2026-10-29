@@ -1,7 +1,7 @@
 // Package suppliers keeps a company's suppliers: identity, tax identity as Coretax needs it,
 // addresses, bank accounts, contacts, payment terms, and whether they are on hold —
-// deactivated, never deleted. It offers contracts.SupplierClient, needs no port, and
-// imports no module.
+// deactivated, never deleted. It offers contracts.SupplierClient, announces its lifecycle
+// through d.Events (suppliers.supplier.*), needs no port, and imports no module.
 package suppliers
 
 import (
@@ -31,7 +31,7 @@ func New(d *kernel.Deps) (*Module, error) {
 		kernel.Permission{Name: application.PermManage, Module: "suppliers", Description: "Menambah, mengubah, menahan, dan menonaktifkan pemasok"},
 		kernel.Permission{Name: application.PermSensitive, Module: "suppliers", Description: "Melihat NIK, paspor, dan rekening pemasok secara utuh, dan mengubah rekening"},
 	)
-	svc := application.NewService(infrastructure.NewRepository(d.Tx), d.Tx, d.Audit, d.Authz, d.Auth, d.Clock)
+	svc := application.NewService(infrastructure.NewRepository(d.Tx), d.Tx, d.Events, d.Audit, d.Authz, d.Auth, d.Clock)
 	return &Module{svc: svc, handler: presentation.NewHandler(svc, d.Authz)}, nil
 }
 

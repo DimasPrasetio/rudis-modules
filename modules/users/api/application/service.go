@@ -58,6 +58,11 @@ type Repository interface {
 	UpdatePassword(ctx context.Context, id int64, hash string, at time.Time) error
 }
 
+// Publisher announces events — the kernel's d.Events.
+type Publisher interface {
+	Publish(ctx context.Context, name string, version int, payload any) error
+}
+
 // Auditor records changes — the kernel's d.Audit.
 type Auditor interface {
 	Record(ctx context.Context, e kernel.AuditEntry)
@@ -88,15 +93,42 @@ type Hasher interface {
 type Service struct {
 	repo       Repository
 	tx         Transactor
+	events     Publisher
 	hasher     Hasher
 	guard      Guard
 	audit      Auditor
 	placements ports.Placements // nil: one company, everyone visible
 }
 
-func NewService(repo Repository, tx Transactor, hasher Hasher, guard Guard, audit Auditor) *Service {
-	return &Service{repo: repo, tx: tx, hasher: hasher, guard: guard, audit: audit}
+func NewService(repo Repository, tx Transactor, events Publisher, hasher Hasher, guard Guard, audit Auditor) *Service {
+	return &Service{repo: repo, tx: tx, events: events, hasher: hasher, guard: guard, audit: audit}
 }
+
+// Event payloads — what a subscriber receives (README › Events). Plain fields only: never a
+// password or its hash, and a password change alone publishes nothing. Published inside the
+// transaction that makes the change, so an event exists only if the change committed.
+
+// UserEvent is the payload of users.user.deactivated and users.user.activated.
+type UserEvent struct {
+	ID    int64  `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+// UserCreated is the payload of users.user.created.
+type UserCreated struct {
+	UserEvent
+	IsActive bool `json:"is_active"`
+}
+
+// UserChanged is the payload of users.user.changed: Changed names the fields that changed
+// ("name", "email").
+type UserChanged struct {
+	UserEvent
+	Changed []string `json:"changed"`
+}
+
+func eventOf(u domain.User) UserEvent { return UserEvent{ID: u.ID, Name: u.Name, Email: u.Email} }
 
 // UsePlacements turns on per-company lists — set once, while the app is assembled.
 func (s *Service) UsePlacements(p ports.Placements) { s.placements = p }
@@ -229,7 +261,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (domain.User, erro
 		}
 		s.audit.Record(ctx, kernel.AuditEntry{Module: "users", Action: "user.created", Target: target(id), Summary: "Menambah pengguna " + in.Name,
 			Data: map[string]any{"name": in.Name, "email": in.Email, "is_active": in.IsActive}})
-		return nil
+		return s.events.Publish(ctx, "users.user.created", 1, UserCreated{UserEvent: UserEvent{ID: id, Name: in.Name, Email: in.Email}, IsActive: in.IsActive})
 	})
 	if err != nil {
 		return domain.User{}, err
@@ -306,12 +338,38 @@ func (s *Service) Update(ctx context.Context, actorID, id int64, in UpdateInput)
 			}
 		}
 		s.recordUpdate(ctx, before, u, hash != "")
-		return nil
+		return s.publishUpdate(ctx, before, u)
 	})
 	if err != nil {
 		return domain.User{}, err
 	}
 	return s.repo.Get(ctx, id)
+}
+
+// publishUpdate announces what an update changed, inside its transaction: the active state as
+// an event of its own, a new name or email as users.user.changed — a new password alone,
+// nothing.
+func (s *Service) publishUpdate(ctx context.Context, before, after domain.User) error {
+	if before.IsActive != after.IsActive {
+		if after.IsActive {
+			if err := s.events.Publish(ctx, "users.user.activated", 1, eventOf(after)); err != nil {
+				return err
+			}
+		} else if err := s.events.Publish(ctx, "users.user.deactivated", 1, eventOf(after)); err != nil {
+			return err
+		}
+	}
+	var changed []string
+	if before.Name != after.Name {
+		changed = append(changed, "name")
+	}
+	if before.Email != after.Email {
+		changed = append(changed, "email")
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	return s.events.Publish(ctx, "users.user.changed", 1, UserChanged{UserEvent: eventOf(after), Changed: changed})
 }
 
 // recordUpdate notes what an update changed — the active state in words of its own.
@@ -366,7 +424,8 @@ func (s *Service) SetPassword(ctx context.Context, id int64, password string) er
 }
 
 // UpdateProfile changes the signed-in user's own name. Email stays with administrators:
-// changing it oneself would be a way to take an account over.
+// changing it oneself would be a way to take an account over. The change, its audit record,
+// and its event commit together.
 func (s *Service) UpdateProfile(ctx context.Context, id int64, name string) (domain.User, error) {
 	var v validator.Validator
 	v.Required("name", name)
@@ -374,22 +433,31 @@ func (s *Service) UpdateProfile(ctx context.Context, id int64, name string) (dom
 	if err := v.Err(); err != nil {
 		return domain.User{}, err
 	}
-	u, err := s.repo.Get(ctx, id)
-	if err != nil {
-		return domain.User{}, notFound(err)
-	}
-	if err := s.repo.UpdateName(ctx, id, name); err != nil {
-		return domain.User{}, notFound(err)
-	}
-	if u.Name != name {
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		u, err := s.repo.Get(ctx, id)
+		if err != nil {
+			return notFound(err)
+		}
+		if err := s.repo.UpdateName(ctx, id, name); err != nil {
+			return notFound(err)
+		}
+		if u.Name == name {
+			return nil
+		}
 		s.audit.Record(ctx, kernel.AuditEntry{Module: "users", Action: "user.profile_updated", Target: target(id), Summary: "Mengubah profil sendiri",
 			Data: map[string]any{"name": map[string]any{"before": u.Name, "after": name}}})
+		u.Name = name
+		return s.events.Publish(ctx, "users.user.changed", 1, UserChanged{UserEvent: eventOf(u), Changed: []string{"name"}})
+	})
+	if err != nil {
+		return domain.User{}, err
 	}
 	return s.repo.Get(ctx, id)
 }
 
 // Bootstrap creates the first user when the table is empty — how a fresh install gets an
-// account to sign in with. It does nothing once any user exists.
+// account to sign in with (users.user.created is published as for any account). It does
+// nothing once any user exists.
 func (s *Service) Bootstrap(ctx context.Context, name, email, password string) (created bool, err error) {
 	n, err := s.repo.CountAll(ctx)
 	if err != nil || n > 0 {

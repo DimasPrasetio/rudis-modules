@@ -59,6 +59,26 @@ in an adapter in the composition root:
 Store `customer_id` as a plain ID (no foreign key). A web page of yours may call
 `GET /api/v1/customers/lookup?q=` for a picker.
 
+## Events
+
+What happens to a customer is announced through `d.Events` (kernel 6), inside the transaction that
+makes the change: a subscriber hears of it only once it committed, through a task of its own —
+after the commit, at least once, in no guaranteed order. Declare what you listen to in your
+`module.json` `listens`; the installer wires it in the composition root. Decode the payload into a
+struct of your own — never import this module. Payloads carry IDs and plain fields only: never a
+tax ID. Read the current state through the contract (`Get`).
+
+| Event (v1) | Payload | When |
+|---|---|---|
+| `customers.customer.created` | `{id, company_id, code, name, party_type}` | A customer was added |
+| `customers.customer.changed` | `{id, company_id, code, name, part}` | Its own fields changed (`part` = `"customer"`: name, tax identity, terms…), or an address was added, changed, deactivated, or activated (`"address"`), or a contact was added, changed, or deleted (`"contact"`) |
+| `customers.customer.deactivated` | `{id, company_id, code, name}` | Deactivated: new documents may not use it (`Usable` refuses). Only when it was active |
+| `customers.customer.activated` | `{id, company_id, code, name}` | Activated again. Only when it was inactive |
+| `customers.customer.held` | `{id, company_id, code, name, reason}` | Put on hold, or the reason changed. Only on a real change |
+| `customers.customer.released` | `{id, company_id, code, name}` | Taken off hold. Only when it was on hold |
+
+A refused change (validation, a code in use, another company's customer) publishes nothing.
+
 ## Permissions
 
 | Permission | For |
@@ -77,6 +97,9 @@ Store `customer_id` as a plain ID (no foreign key). A web page of yours may call
 
 ## Changes
 
+- **0.3.0** — lifecycle events: `customers.customer.created`, `.changed` (with the part that
+  changed), `.deactivated`, `.activated`, `.held`, `.released`, published inside the transaction
+  that makes the change (see Events). `application.NewService` takes the kernel's `d.Events`.
 - **0.2.0** — tax identity hardened (taxid 0.2.0): an NPWP not starting with `0` must be a
   valid NIK and belong to a resident individual, the all-zero placeholder is refused, NIK regions
   are checked; new kind `other`. Every ID of a person is masked, including an individual's NPWP.

@@ -1,7 +1,7 @@
 // Package customers keeps a company's customers: identity, tax identity as Coretax needs it,
 // billing and shipping addresses, contacts, payment terms, a credit limit, and whether they are
-// on hold — deactivated, never deleted. It offers contracts.CustomerClient, needs no port, and
-// imports no module.
+// on hold — deactivated, never deleted. It offers contracts.CustomerClient, announces its
+// lifecycle through d.Events (customers.customer.*), needs no port, and imports no module.
 package customers
 
 import (
@@ -32,7 +32,7 @@ func New(d *kernel.Deps) (*Module, error) {
 		kernel.Permission{Name: application.PermCredit, Module: "customers", Description: "Mengubah termin pembayaran dan batas kredit pelanggan"},
 		kernel.Permission{Name: application.PermSensitive, Module: "customers", Description: "Melihat NIK dan nomor paspor pelanggan secara utuh"},
 	)
-	svc := application.NewService(infrastructure.NewRepository(d.Tx), d.Tx, d.Audit, d.Authz, d.Auth, d.Clock)
+	svc := application.NewService(infrastructure.NewRepository(d.Tx), d.Tx, d.Events, d.Audit, d.Authz, d.Auth, d.Clock)
 	return &Module{svc: svc, handler: presentation.NewHandler(svc, d.Authz)}, nil
 }
 

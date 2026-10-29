@@ -1,9 +1,9 @@
 {
   "id": "users",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "kind": "fullstack",
   "title": "Users",
-  "summary": "The people who can sign in: list, search, add, edit, deactivate; each person's own profile page; first-user bootstrap from env. Offers UserClient (incl. SetPassword for an auth provider, IDs); every change audited; guarded by users.read / users.manage. With an organization module, its pages show the active company's people.",
+  "summary": "The people who can sign in: list, search, add, edit, deactivate; each person's own profile page; first-user bootstrap from env. Offers UserClient (incl. SetPassword for an auth provider, IDs); every change audited; guarded by users.read / users.manage. With an organization module, its pages show the active company's people. Publishes accounts' lifecycle as events (users.user.created/changed/deactivated/activated).",
   "when_to_use": [
     "Any app where people sign in with an account the app itself stores."
   ],
@@ -47,6 +47,28 @@
     {
       "name": "users.manage",
       "description": "Menambah, mengubah, dan menonaktifkan pengguna"
+    }
+  ],
+  "emits": [
+    {
+      "name": "users.user.created",
+      "version": 1,
+      "description": "An account was created (the bootstrap account too): {id, name, email, is_active}."
+    },
+    {
+      "name": "users.user.changed",
+      "version": 1,
+      "description": "An account's name or email changed — by an administrator or the person (own profile): {id, name, email, changed} — changed lists \"name\" and/or \"email\". A password change alone publishes nothing."
+    },
+    {
+      "name": "users.user.deactivated",
+      "version": 1,
+      "description": "An account was deactivated — it can no longer sign in: {id, name, email}."
+    },
+    {
+      "name": "users.user.activated",
+      "version": 1,
+      "description": "A deactivated account was activated again: {id, name, email}."
     }
   ],
   "owns_tables": [

@@ -2,16 +2,16 @@ package application_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"__GO_MODULE__/internal/kernel"
+	"__GO_MODULE__/internal/kernel/kerneltest"
 	"__GO_MODULE__/internal/modules/users/application"
 	"__GO_MODULE__/internal/modules/users/domain"
 	"__GO_MODULE__/internal/modules/users/ports"
@@ -154,18 +154,21 @@ func (a *audit) actions() []string {
 	return out
 }
 
-func newService(repo application.Repository, protected ...int64) *application.Service {
-	svc, _ := newAudited(repo, protected...)
+func newService(t testing.TB, repo application.Repository, protected ...int64) *application.Service {
+	svc, _, _ := newAudited(t, repo, protected...)
 	return svc
 }
 
-func newAudited(repo application.Repository, protected ...int64) (*application.Service, *audit) {
+// newAudited builds the service on a kernel without a database (kerneltest): its d.Tx keeps an
+// event of a failed transaction from ever being published.
+func newAudited(t testing.TB, repo application.Repository, protected ...int64) (*application.Service, *audit, *kerneltest.Kit) {
 	g := guard{}
 	for _, id := range protected {
 		g[id] = true
 	}
 	a := &audit{}
-	return application.NewService(repo, kernel.NewTxSlot(nil, slog.New(slog.NewTextHandler(io.Discard, nil))), plainHasher{}, g, a), a
+	k := kerneltest.Deps(t)
+	return application.NewService(repo, k.Deps.Tx, k.Deps.Events, plainHasher{}, g, a), a, k
 }
 
 func boolPtr(b bool) *bool { return &b }
@@ -185,7 +188,7 @@ func status(t *testing.T, err error) int {
 
 func TestCreateNormalizesEmailAndHashes(t *testing.T) {
 	repo := newMemRepo()
-	svc := newService(repo)
+	svc := newService(t, repo)
 	u, err := svc.Create(context.Background(), application.CreateInput{Name: "Ana", Email: "  Ana@Example.COM ", Password: "secret123", IsActive: true})
 	if err != nil {
 		t.Fatal(err)
@@ -199,7 +202,7 @@ func TestCreateNormalizesEmailAndHashes(t *testing.T) {
 }
 
 func TestCreateRejectsInvalidInput(t *testing.T) {
-	svc := newService(newMemRepo())
+	svc := newService(t, newMemRepo())
 	_, err := svc.Create(context.Background(), application.CreateInput{Name: "", Email: "nope", Password: "short"})
 	if got := status(t, err); got != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422", got)
@@ -207,7 +210,7 @@ func TestCreateRejectsInvalidInput(t *testing.T) {
 }
 
 func TestCreateDuplicateEmailIsAFieldError(t *testing.T) {
-	svc := newService(newMemRepo())
+	svc := newService(t, newMemRepo())
 	in := application.CreateInput{Name: "Ana", Email: "ana@example.com", Password: "secret123", IsActive: true}
 	if _, err := svc.Create(context.Background(), in); err != nil {
 		t.Fatal(err)
@@ -219,7 +222,7 @@ func TestCreateDuplicateEmailIsAFieldError(t *testing.T) {
 }
 
 func TestCannotDeactivateYourself(t *testing.T) {
-	svc := newService(newMemRepo())
+	svc := newService(t, newMemRepo())
 	u, _ := svc.Create(context.Background(), application.CreateInput{Name: "Ana", Email: "ana@example.com", Password: "secret123", IsActive: true})
 	_, err := svc.Update(context.Background(), u.ID, u.ID, application.UpdateInput{Name: "Ana", Email: u.Email, IsActive: boolPtr(false)})
 	if got := status(t, err); got != http.StatusConflict {
@@ -229,7 +232,7 @@ func TestCannotDeactivateYourself(t *testing.T) {
 
 func TestYourOwnEmailAndPasswordAreNotChangedFromTheUsersPage(t *testing.T) {
 	repo := newMemRepo()
-	svc := newService(repo)
+	svc := newService(t, repo)
 	u, _ := svc.Create(context.Background(), application.CreateInput{Name: "Ana", Email: "ana@example.com", Password: "secret123", IsActive: true})
 	if _, err := svc.Update(context.Background(), u.ID, u.ID, application.UpdateInput{Name: "Ana", Email: u.Email, Password: "new-secret-1"}); status(t, err) != http.StatusForbidden {
 		t.Fatalf("own password from the admin page: want 403, got %v", err)
@@ -247,7 +250,7 @@ func TestYourOwnEmailAndPasswordAreNotChangedFromTheUsersPage(t *testing.T) {
 
 func TestUpdateReadsTheRowUnderItsLock(t *testing.T) {
 	repo := newMemRepo()
-	svc := newService(repo)
+	svc := newService(t, repo)
 	u := create(t, svc, "ana@example.com")
 	if _, err := svc.Update(context.Background(), 99, u.ID, application.UpdateInput{Name: "Ana B", Email: u.Email}); err != nil {
 		t.Fatal(err)
@@ -259,9 +262,9 @@ func TestUpdateReadsTheRowUnderItsLock(t *testing.T) {
 
 func TestCannotTouchAMorePrivilegedAccount(t *testing.T) {
 	repo := newMemRepo()
-	admin := create(t, newService(repo), "admin@example.com")
-	operator := create(t, newService(repo), "op@example.com")
-	svc := newService(repo, admin.ID) // the operator does not cover the admin
+	admin := create(t, newService(t, repo), "admin@example.com")
+	operator := create(t, newService(t, repo), "op@example.com")
+	svc := newService(t, repo, admin.ID) // the operator does not cover the admin
 	for name, in := range map[string]application.UpdateInput{
 		"reset password": {Name: "Admin", Email: admin.Email, Password: "taken-over-1"},
 		"change email":   {Name: "Admin", Email: "op2@example.com"},
@@ -278,7 +281,7 @@ func TestCannotTouchAMorePrivilegedAccount(t *testing.T) {
 
 func TestOmittedIsActiveKeepsTheState(t *testing.T) {
 	repo := newMemRepo()
-	svc := newService(repo)
+	svc := newService(t, repo)
 	u := create(t, svc, "ana@example.com")
 	got, err := svc.Update(context.Background(), 99, u.ID, application.UpdateInput{Name: "Ana B", Email: u.Email})
 	if err != nil || !got.IsActive {
@@ -288,7 +291,7 @@ func TestOmittedIsActiveKeepsTheState(t *testing.T) {
 
 func TestPasswordChangeIsRecorded(t *testing.T) {
 	repo := newMemRepo()
-	svc := newService(repo)
+	svc := newService(t, repo)
 	u := create(t, svc, "ana@example.com")
 	if _, err := svc.Update(context.Background(), 99, u.ID, application.UpdateInput{Name: "Ana", Email: u.Email, Password: "new-secret-1"}); err != nil {
 		t.Fatal(err)
@@ -308,7 +311,7 @@ func create(t *testing.T, svc *application.Service, email string) domain.User {
 }
 
 func TestBootstrapOnlyWhenEmpty(t *testing.T) {
-	svc := newService(newMemRepo())
+	svc := newService(t, newMemRepo())
 	created, err := svc.Bootstrap(context.Background(), "Admin", "admin@example.com", "secret123")
 	if err != nil || !created {
 		t.Fatalf("first bootstrap: created=%v err=%v", created, err)
@@ -320,7 +323,7 @@ func TestBootstrapOnlyWhenEmpty(t *testing.T) {
 }
 
 func TestGetMissingIs404(t *testing.T) {
-	svc := newService(newMemRepo())
+	svc := newService(t, newMemRepo())
 	_, err := svc.Get(context.Background(), 99)
 	if got := status(t, err); got != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", got)
@@ -329,7 +332,7 @@ func TestGetMissingIs404(t *testing.T) {
 
 func TestSetPasswordForAnAuthProvider(t *testing.T) {
 	repo := newMemRepo()
-	svc := newService(repo)
+	svc := newService(t, repo)
 	u := create(t, svc, "ana@example.com")
 	if err := svc.SetPassword(context.Background(), u.ID, "short"); !errors.Is(err, application.ErrInvalidPassword) || err.Error() != "invalid password: minimal 8 karakter" {
 		t.Fatalf("a short password must be refused with the rule it breaks, got %v", err)
@@ -344,7 +347,7 @@ func TestSetPasswordForAnAuthProvider(t *testing.T) {
 
 func TestOwnProfileChangesTheNameOnly(t *testing.T) {
 	repo := newMemRepo()
-	svc := newService(repo)
+	svc := newService(t, repo)
 	u := create(t, svc, "ana@example.com")
 	got, err := svc.UpdateProfile(context.Background(), u.ID, "Ana Baru")
 	if err != nil || got.Name != "Ana Baru" || got.Email != "ana@example.com" {
@@ -357,7 +360,7 @@ func TestOwnProfileChangesTheNameOnly(t *testing.T) {
 
 func TestChangesAreAudited(t *testing.T) {
 	repo := newMemRepo()
-	svc, a := newAudited(repo)
+	svc, a, _ := newAudited(t, repo)
 	u := create(t, svc, "ana@example.com")
 	_, _ = svc.Update(context.Background(), 99, u.ID, application.UpdateInput{Name: "Ana", Email: u.Email, Password: "new-secret-1", IsActive: boolPtr(false)})
 	got := strings.Join(a.actions(), ",")
@@ -414,7 +417,7 @@ func in(company int64) context.Context {
 
 func TestWithPlacementsTheUsersPagesShowOneCompany(t *testing.T) {
 	repo := newMemRepo()
-	svc := newService(repo)
+	svc := newService(t, repo)
 	a, _ := svc.Create(in(1), application.CreateInput{Name: "Ana", Email: "ana@a.test", Password: "password-1", IsActive: true})
 	b, _ := svc.Create(in(2), application.CreateInput{Name: "Budi", Email: "budi@b.test", Password: "password-1", IsActive: true})
 	p := placements{a.ID: {1}, b.ID: {2}}
@@ -440,11 +443,139 @@ func TestWithPlacementsTheUsersPagesShowOneCompany(t *testing.T) {
 
 func TestAnAccountWorkingInTwoCompaniesNeedsAManagerInBoth(t *testing.T) {
 	repo := newMemRepo()
-	svc := newService(repo, -1) // the actor manages users in company 2, not in company 1
+	svc := newService(t, repo, -1) // the actor manages users in company 2, not in company 1
 	a, _ := svc.Create(in(1), application.CreateInput{Name: "Ana", Email: "ana@a.test", Password: "password-1", IsActive: true})
 	b, _ := svc.Create(in(2), application.CreateInput{Name: "Budi", Email: "budi@b.test", Password: "password-1", IsActive: true})
 	svc.UsePlacements(placements{a.ID: {1, 2}, b.ID: {2}})
 	if _, err := svc.Update(in(2), b.ID, a.ID, application.UpdateInput{Name: "Ana", Email: "mine@b.test", Password: "taken-over-1"}); status(t, err) != http.StatusForbidden {
 		t.Fatalf("company 2 changed an account that also works in company 1: %v", err)
+	}
+}
+
+// --- events ---
+
+func eventNames(k *kerneltest.Kit) string {
+	var out []string
+	for _, ev := range k.Published() {
+		out = append(out, fmt.Sprintf("%s/%d", ev.Name, ev.Version))
+	}
+	return strings.Join(out, ",")
+}
+
+func decode[T any](t *testing.T, ev kernel.Event) T {
+	t.Helper()
+	var p T
+	if err := json.Unmarshal(ev.Payload, &p); err != nil {
+		t.Fatalf("%s payload: %v", ev.Name, err)
+	}
+	return p
+}
+
+func TestEventsFollowTheAccount(t *testing.T) {
+	repo := newMemRepo()
+	svc, _, k := newAudited(t, repo)
+	ctx := context.Background()
+	u, err := svc.Create(ctx, application.CreateInput{Name: "Ana", Email: "ana@example.com", Password: "secret123", IsActive: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := eventNames(k); got != "users.user.created/1" {
+		t.Fatalf("after Create: %s", got)
+	}
+	created := decode[application.UserCreated](t, k.Published()[0])
+	if created.ID != u.ID || created.Name != "Ana" || created.Email != "ana@example.com" || !created.IsActive {
+		t.Errorf("created payload = %+v", created)
+	}
+	// A new password alone is no event: secrets are not announced, and nothing else changed.
+	if _, err := svc.Update(ctx, 99, u.ID, application.UpdateInput{Name: "Ana", Email: u.Email, Password: "new-secret-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := eventNames(k); got != "users.user.created/1" {
+		t.Fatalf("a password change published: %s", got)
+	}
+	// A rename with a new email and a deactivation in one update: the state in an event of its
+	// own, the fields in users.user.changed.
+	if _, err := svc.Update(ctx, 99, u.ID, application.UpdateInput{Name: "Ana B", Email: "ana.b@example.com", Password: "new-secret-2", IsActive: boolPtr(false)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Update(ctx, 99, u.ID, application.UpdateInput{Name: "Ana B", Email: "ana.b@example.com", IsActive: boolPtr(true)}); err != nil {
+		t.Fatal(err)
+	}
+	// Own profile: the name.
+	if _, err := svc.UpdateProfile(ctx, u.ID, "Ana C"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpdateProfile(ctx, u.ID, "Ana C"); err != nil { // the same name again
+		t.Fatal(err)
+	}
+	want := "users.user.created/1,users.user.deactivated/1,users.user.changed/1,users.user.activated/1,users.user.changed/1"
+	if got := eventNames(k); got != want {
+		t.Fatalf("events = %s\nwant     %s", got, want)
+	}
+	pub := k.Published()
+	if off := decode[application.UserEvent](t, pub[1]); off.ID != u.ID || off.Name != "Ana B" || off.Email != "ana.b@example.com" {
+		t.Errorf("deactivated payload = %+v", off)
+	}
+	if ch := decode[application.UserChanged](t, pub[2]); ch.ID != u.ID || ch.Email != "ana.b@example.com" || strings.Join(ch.Changed, ",") != "name,email" {
+		t.Errorf("changed payload = %+v", ch)
+	}
+	if ch := decode[application.UserChanged](t, pub[4]); ch.ID != u.ID || ch.Name != "Ana C" || ch.Email != "ana.b@example.com" || strings.Join(ch.Changed, ",") != "name" {
+		t.Errorf("profile change payload = %+v", ch)
+	}
+	for _, ev := range pub {
+		if s := string(ev.Payload); strings.Contains(s, "secret") || strings.Contains(s, "hash:") || strings.Contains(s, "password") {
+			t.Errorf("a password reached %s: %s", ev.Name, s)
+		}
+	}
+}
+
+func TestNoEventOfAFailedTransaction(t *testing.T) {
+	repo := newMemRepo()
+	svc, _, k := newAudited(t, repo)
+	ctx := context.Background()
+	u := create(t, svc, "ana@example.com")
+	n := len(k.Published())
+	// Refused: a duplicate email (the repository refuses inside the transaction), an invalid
+	// profile, and a self-deactivation.
+	if _, err := svc.Create(ctx, application.CreateInput{Name: "Ana 2", Email: "ana@example.com", Password: "secret123", IsActive: true}); err == nil {
+		t.Fatal("a duplicate email saved")
+	}
+	if _, err := svc.Update(ctx, 99, u.ID, application.UpdateInput{Name: "", Email: u.Email}); err == nil {
+		t.Fatal("an empty name saved")
+	}
+	if _, err := svc.Update(ctx, u.ID, u.ID, application.UpdateInput{Name: "Ana", Email: u.Email, IsActive: boolPtr(false)}); err == nil {
+		t.Fatal("deactivated oneself")
+	}
+	if got := len(k.Published()); got != n {
+		t.Fatalf("refused changes published %d events: %s", got-n, eventNames(k))
+	}
+	// The event is published inside the transaction: a caller's rollback takes it with it.
+	err := k.Deps.Tx.Do(ctx, func(ctx context.Context) error {
+		if _, err := svc.Create(ctx, application.CreateInput{Name: "Budi", Email: "budi@example.com", Password: "secret123", IsActive: true}); err != nil {
+			return err
+		}
+		if _, err := svc.Update(ctx, 99, u.ID, application.UpdateInput{Name: "Ana", Email: u.Email, IsActive: boolPtr(false)}); err != nil {
+			return err
+		}
+		return errors.New("the caller rolls back")
+	})
+	if err == nil {
+		t.Fatal("the outer transaction did not fail")
+	}
+	if got := len(k.Published()); got != n {
+		t.Fatalf("a rolled-back transaction published %d events: %s", got-n, eventNames(k))
+	}
+}
+
+func TestBootstrapPublishesTheFirstAccount(t *testing.T) {
+	svc, _, k := newAudited(t, newMemRepo())
+	if created, err := svc.Bootstrap(context.Background(), "Admin", "admin@example.com", "secret123"); err != nil || !created {
+		t.Fatalf("bootstrap: %v %v", created, err)
+	}
+	if got := eventNames(k); got != "users.user.created/1" {
+		t.Fatalf("bootstrap published %s", got)
+	}
+	if p := decode[application.UserCreated](t, k.Published()[0]); p.Email != "admin@example.com" || !p.IsActive {
+		t.Errorf("payload = %+v", p)
 	}
 }

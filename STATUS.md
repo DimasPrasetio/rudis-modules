@@ -21,7 +21,7 @@ or the testbed's scenarios without touching it.
 | [app-shell](modules/app-shell/README.md) | web | 0.6.0 | 6 | — | full, organization, documents |
 | [audit-log](modules/audit-log/README.md) | fullstack | 0.3.0 | 6 | yes | full, organization, documents |
 | [auth](modules/auth/README.md) | fullstack | 0.8.0 | 6 | — | full, no-rbac, auth-alone, lifecycle, organization, documents |
-| [customers](modules/customers/README.md) | fullstack | 0.2.0 | 6 | yes | documents |
+| [customers](modules/customers/README.md) | fullstack | 0.3.0 | 6 | yes | documents |
 | [docstate](modules/docstate/README.md) | gokit | 0.1.0 | 6 | — | documents |
 | [files](modules/files/README.md) | fullstack | 0.3.0 | 6 | yes | full, organization |
 | [mailer](modules/mailer/README.md) | fullstack | 0.3.0 | 6 | yes | full, lifecycle, organization |
@@ -31,14 +31,14 @@ or the testbed's scenarios without touching it.
 | [period](modules/period/README.md) | fullstack | 0.1.0 | 6 | yes | documents |
 | [rbac](modules/rbac/README.md) | fullstack | 0.6.0 | 6 | — | full, organization, documents |
 | [settings](modules/settings/README.md) | fullstack | 0.3.1 | 6 | yes | full, organization |
-| [suppliers](modules/suppliers/README.md) | fullstack | 0.2.0 | 6 | yes | documents |
+| [suppliers](modules/suppliers/README.md) | fullstack | 0.3.0 | 6 | yes | documents |
 | [taxid](modules/taxid/README.md) | gokit | 0.2.0 | 6 | — | documents |
 | [ui-core](modules/ui-core/README.md) | ui | 0.5.0 | 6 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
 | [ui-data](modules/ui-data/README.md) | ui | 0.2.1 | 3 | — | full, no-rbac, users-alone, lifecycle, organization, documents |
 | [ui-feedback](modules/ui-feedback/README.md) | ui | 0.1.0 | 3 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
 | [ui-forms](modules/ui-forms/README.md) | ui | 0.3.0 | 3 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
 | [ui-gallery](modules/ui-gallery/README.md) | web | 0.1.2 | 3 | — | full, lifecycle |
-| [users](modules/users/README.md) | fullstack | 0.8.0 | 6 | — | full, no-rbac, users-alone, lifecycle, organization, documents |
+| [users](modules/users/README.md) | fullstack | 0.9.0 | 6 | — | full, no-rbac, users-alone, lifecycle, organization, documents |
 
 | Preset | Version |
 |---|---|
@@ -53,7 +53,7 @@ or the testbed's scenarios without touching it.
 | `lifecycle` | the module.mjs CLI on a throwaway library copy: add (and a refused add), status, upgrade merging both sides, a conflicting upgrade, detach, a port wired later, remove, release-tag fallback, promote (refused for a rule breach), the library's own documents (status-current, a stale STATUS.md snapshot, rules-documented, testbed-covered, work branches warned and never tagged), and the pinned kernel guards (an edit, a too-new module, a mixed kernel commit refused) |
 | `kernel6` | fixture modules against MySQL: one d.Tx across modules joined by a port, an event delivered once across two containers, companies kept apart, a missed calendar tick caught up once; the rules refusing scope, transaction, and event breaches |
 | `organization` | every module + organization added later, its late ports wired with module.mjs: several companies and branches against MySQL — isolation, refusals, branch heads, deactivation, recovery, public routes and jobs without panic |
-| `documents` | money, docstate, numbering, period through a fixture invoice module: exact amounts, gapless numbers from two containers at once, a rollback giving its number back, closing and reopening the books, a lock moved mid-posting, revisions, company isolation; the exact-numbers rule; customers, suppliers, and taxid: generated codes, NPWP normalized, duplicate tax IDs confirmed, NIK and account numbers masked with audited reveal, credit and bank accounts guarded, a customer on hold or inactive refused by the fixture's posting through its port, companies kept apart |
+| `documents` | money, docstate, numbering, period through a fixture invoice module: exact amounts, gapless numbers from two containers at once, a rollback giving its number back, closing and reopening the books, a lock moved mid-posting, revisions, company isolation; the exact-numbers rule; customers, suppliers, and taxid: generated codes, NPWP normalized, duplicate tax IDs confirmed, NIK and account numbers masked with audited reveal, credit and bank accounts guarded, a customer on hold or inactive refused by the fixture's posting through its port, companies kept apart; the master-data events (customers 0.3, users 0.9) reaching the fixture's subscriber after the commit — none for a refused change |
 <!-- rudis:status:end -->
 
 ## Last verified
