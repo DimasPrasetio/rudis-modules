@@ -171,23 +171,35 @@ func (s *Service) place(ctx context.Context, actor, userID, company, branch int6
 	return s.repo.AddPlacement(ctx, domain.Placement{UserID: userID, CompanyID: company, BranchID: branch, IsDefault: n == 0, CreatedAt: s.clock.Now(), CreatedBy: actor})
 }
 
-// Unplace takes a placement away. The user keeps their account and roles; they just can no
-// longer work there.
+// Unplace takes a placement away: the user can no longer work there. The removal, its audit
+// record, and the organization.user.unplaced event are one transaction — the event is how the
+// roles held there are taken away (rbac listens), so an unplaced person keeps no standing in a
+// place they cannot enter. Their account, and their roles elsewhere, stay.
 func (s *Service) Unplace(ctx context.Context, actor, userID, branch int64) error {
 	if err := s.mayPlace(ctx, actor, userID, branch); err != nil {
 		return err
 	}
 	company := here(ctx).CompanyID
-	ok, err := s.repo.RemovePlacement(ctx, userID, company, branch)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return apperror.NotFound("Penempatan tidak ditemukan")
-	}
-	s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "organization", Action: "user.unplaced", Target: userTarget(userID),
-		Summary: "Mencabut penempatan", Data: map[string]any{"company_id": company, "branch_id": branch}})
-	return nil
+	return s.tx.Do(ctx, func(ctx context.Context) error {
+		ok, err := s.repo.RemovePlacement(ctx, userID, company, branch)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return apperror.NotFound("Penempatan tidak ditemukan")
+		}
+		s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "organization", Action: "user.unplaced", Target: userTarget(userID),
+			Summary: "Mencabut penempatan", Data: map[string]any{"company_id": company, "branch_id": branch}})
+		return s.events.Publish(ctx, "organization.user.unplaced", 1, userUnplaced{UserID: userID, CompanyID: company, BranchID: branch, UnplacedBy: actor})
+	})
+}
+
+// userUnplaced is organization.user.unplaced v1 (module.json emits; README).
+type userUnplaced struct {
+	UserID     int64 `json:"user_id"`
+	CompanyID  int64 `json:"company_id"`
+	BranchID   int64 `json:"branch_id"`
+	UnplacedBy int64 `json:"unplaced_by"`
 }
 
 // PlaceInCompany places someone — found by exact email — across another company, from the home

@@ -1,9 +1,9 @@
 {
   "id": "rbac",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "kind": "fullstack",
   "title": "Roles and permissions (RBAC)",
-  "summary": "Who may do what: roles hold permissions that modules declare, users hold roles per company — across it or in one branch. Fills the kernel's d.Authz (and Units for branches); Roles page with a per-module permission editor and members; Administrator role with every permission.",
+  "summary": "Who may do what: each company defines its own roles holding permissions that modules declare; users hold them across the company or in one branch. Fills the kernel's d.Authz (and Units for branches); Roles page with a per-module permission editor and members; an Administrator role with every permission per company; offers RoleHolders (who holds role X) for approvals.",
   "when_to_use": [
     "Different people need different access: admins, staff, read-only viewers.",
     "Any app with more than one kind of user, once auth is in."
@@ -17,7 +17,9 @@
   ],
   "requires_kernel": 6,
   "provides": {
-    "contracts": [],
+    "contracts": [
+      "RoleHolders"
+    ],
     "kernel": [
       "authz"
     ]
@@ -63,6 +65,7 @@
     "role_permissions",
     "user_roles"
   ],
+  "scoped": true,
   "env": [
     {
       "name": "RBAC_BOOTSTRAP_ADMIN_EMAIL",
@@ -123,6 +126,11 @@
       "event": "organization.company.created",
       "subscriber": "rbac.appoint-founder",
       "handler": "rbacModule.OnCompanyCreated"
+    },
+    {
+      "event": "organization.user.unplaced",
+      "subscriber": "rbac.revoke-unplaced",
+      "handler": "rbacModule.OnUserUnplaced"
     }
   ]
 }

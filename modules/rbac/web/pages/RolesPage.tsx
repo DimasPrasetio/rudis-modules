@@ -38,7 +38,7 @@ export default function RolesPage() {
     <Page>
       <PageHeader
         title="Peran"
-        description="Apa yang boleh dilakukan setiap kelompok orang. Daftar izin berasal dari modul yang terpasang."
+        description="Apa yang boleh dilakukan setiap kelompok orang di perusahaan ini — setiap perusahaan menentukan perannya sendiri. Daftar izin berasal dari modul yang terpasang."
         actions={
           <Button onClick={() => setCreating(true)}>
             <Plus />

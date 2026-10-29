@@ -27,9 +27,9 @@ or the testbed's scenarios without touching it.
 | [mailer](modules/mailer/README.md) | fullstack | 0.3.0 | 6 | yes | full, lifecycle, organization |
 | [money](modules/money/README.md) | gokit | 0.1.0 | 6 | — | documents |
 | [numbering](modules/numbering/README.md) | fullstack | 0.1.0 | 6 | yes | documents |
-| [organization](modules/organization/README.md) | fullstack | 0.1.0 | 6 | — | organization, documents |
+| [organization](modules/organization/README.md) | fullstack | 0.2.0 | 6 | — | organization, documents |
 | [period](modules/period/README.md) | fullstack | 0.1.0 | 6 | yes | documents |
-| [rbac](modules/rbac/README.md) | fullstack | 0.6.0 | 6 | — | full, organization, documents |
+| [rbac](modules/rbac/README.md) | fullstack | 0.7.0 | 6 | yes | full, organization, documents |
 | [settings](modules/settings/README.md) | fullstack | 0.3.1 | 6 | yes | full, organization |
 | [suppliers](modules/suppliers/README.md) | fullstack | 0.3.0 | 6 | yes | documents |
 | [taxid](modules/taxid/README.md) | gokit | 0.2.0 | 6 | — | documents |
