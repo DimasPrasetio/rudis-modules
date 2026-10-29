@@ -33,7 +33,8 @@
 //               taxid: generated codes, NPWP normalized, duplicate tax IDs confirmed, NIK and
 //               account numbers masked with audited reveal, credit and bank accounts guarded,
 //               a customer on hold or inactive refused by the fixture's posting through its
-//               port, companies kept apart
+//               port, companies kept apart; the master-data events (customers 0.3, users 0.9)
+//               reaching the fixture's subscriber after the commit — none for a refused change
 // Each: install → npm install → go mod tidy → sqlc generate → gofmt → go vet → go test →
 // build:web → build:api → run the binary and call the API.
 //
@@ -1710,6 +1711,14 @@ async function documents() {
       const clerkRole = res.body?.data?.id;
       res = await admin.call("POST", "/api/v1/users", { name: "Staf", email: "staf@example.com", password: "staf-pass-1234" });
       expect("a sales clerk, without credit or sensitive rights", res.status === 201 && (await admin.call("POST", `/api/v1/rbac/roles/${clerkRole}/members`, { user_id: res.body.data.id })).status === 201, res.body);
+      // users 0.9: users.user.created reaches the fixture's subscriber through a task once the
+      // account committed — the accountant's and the clerk's (the bootstrap account was created
+      // before the subscriber was wired).
+      const usersNoted = () => q("SELECT COUNT(*) FROM audit_log WHERE module = 'fixinvoice' AND action = 'user.noted'");
+      expect("users 0.9: users.user.created delivered to another module after the commit (Akuntan, Staf)", await waitFor(() => (usersNoted() === "2" ? "ok" : undefined), 15000) === "ok", usersNoted());
+      res = await admin.call("POST", "/api/v1/users", { name: "Staf Lagi", email: "staf@example.com", password: "staf-pass-1234" });
+      expect("…a refused account (422, email in use) left no delivery in the kernel's tasks table",
+        res.status === 422 && q("SELECT COUNT(*) FROM kernel_tasks WHERE kind = 'event:fixinvoice.note-user'") === "2" && usersNoted() === "2", res.body);
       await new Promise((resolve) => setTimeout(resolve, 300));
       const clerk = await signIn(p1, "staf@example.com", "staf-pass-1234");
       const budiShown = (await clerk.call("GET", `${CU}/${budi.id}`)).body?.data;
@@ -1737,6 +1746,12 @@ async function documents() {
         q(`SELECT COUNT(*) FROM fix_invoices WHERE id = ${sale.id} AND number IS NULL`) === "1", res.body);
       expect("released", (await clerk.call("POST", `${CU}/${maju.id}/release`)).status === 200);
       expect("deactivated", (await clerk.call("POST", `${CU}/${maju.id}/deactivate`)).status === 200);
+      // customers 0.3: the deactivation's event reaches the fixture's subscriber — through a task
+      // written in the same transaction, so only after the commit.
+      const customersNoted = () => q("SELECT COUNT(*) FROM audit_log WHERE module = 'fixinvoice' AND action = 'customer.noted'");
+      expect("customers 0.3: customers.customer.deactivated delivered to another module after the commit",
+        await waitFor(() => (customersNoted() === "1" ? "ok" : undefined), 15000) === "ok" &&
+        q("SELECT summary FROM audit_log WHERE module = 'fixinvoice' AND action = 'customer.noted'") === "Pelanggan PLG-00001 dinonaktifkan (event)", customersNoted());
       res = await post(admin, sale.id);
       expect("posting for an inactive customer → 409", res.status === 409 && /nonaktif/.test(res.body.message), res.body);
       res = await admin.call("GET", `${CU}/${maju.id}`);
@@ -1801,6 +1816,9 @@ async function documents() {
       res = await admin.call("GET", `${SU}?q=3201`);
       expect("…is not found by its first digits either", res.status === 200 && res.body.meta.total === 0, res.body);
       expect("company 1's customer is not found from B (404)", (await admin.call("GET", `${CU}/${maju.id}`, undefined, at(String(b)))).status === 404);
+      expect("…nor deactivated from there — and the refused change published nothing (no task, no note)",
+        (await admin.call("POST", `${CU}/${maju.id}/deactivate`, undefined, at(String(b)))).status === 404 &&
+        q("SELECT COUNT(*) FROM kernel_tasks WHERE kind = 'event:fixinvoice.note-deactivated'") === "1" && customersNoted() === "1");
       expect("…nor its supplier", (await admin.call("GET", `${SU}/${sup.id}`, undefined, at(String(b)))).status === 404);
       res = await admin.call("POST", CU, { name: "Toko Maju", party_type: "company", tax_id_kind: "npwp", tax_id: "0013024427092000" }, at(String(b)));
       expect("B keeps its own customers: the NPWP is no duplicate there, its codes start at PLG-00001", res.status === 201 && res.body.data.customer.code === "PLG-00001", res.body);

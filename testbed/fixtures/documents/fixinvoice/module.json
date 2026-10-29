@@ -1,9 +1,9 @@
 {
   "id": "fixinvoice",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "kind": "backend",
   "title": "Fixture invoices",
-  "summary": "Testbed fixture: invoices that follow the docstate posting recipe — money amounts, a discount allocated over lines, a gapless number from numbering, the period lock, stock taken in the same d.Tx, cancel and amend; an optional customer checked and copied through a port.",
+  "summary": "Testbed fixture: invoices that follow the docstate posting recipe — money amounts, a discount allocated over lines, a gapless number from numbering, the period lock, stock taken in the same d.Tx, cancel and amend; an optional customer checked and copied through a port; notes a deactivated customer and a new account from their events.",
   "when_to_use": [
     "Never in a project: the testbed proves the document foundations with it."
   ],
@@ -43,6 +43,18 @@
       "name": "fixinvoice.invoice.cancelled",
       "version": 1,
       "description": "A posted invoice was cancelled: {id, number, reason}."
+    }
+  ],
+  "listens": [
+    {
+      "event": "customers.customer.deactivated",
+      "subscriber": "fixinvoice.note-deactivated",
+      "handler": "fixinvoiceModule.OnCustomerDeactivated"
+    },
+    {
+      "event": "users.user.created",
+      "subscriber": "fixinvoice.note-user",
+      "handler": "fixinvoiceModule.OnUserCreated"
     }
   ],
   "ports": [

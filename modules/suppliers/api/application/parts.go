@@ -63,7 +63,7 @@ func (s *Service) SaveAddress(ctx context.Context, supplierID int64, a domain.Ad
 		}
 		s.audit.Record(ctx, kernel.AuditEntry{Module: "suppliers", Action: action, Target: target(supplierID),
 			Summary: "Alamat " + a.Label + " pemasok " + c.Code, Data: map[string]any{"address_id": a.ID}})
-		return nil
+		return s.changed(ctx, c, "address")
 	})
 	return a, err
 }
@@ -90,7 +90,7 @@ func (s *Service) SetAddressActive(ctx context.Context, supplierID, id int64, ac
 		s.audit.Record(ctx, kernel.AuditEntry{Module: "suppliers", Action: "address.active_changed", Target: target(supplierID),
 			Summary: "Alamat " + a.Label + " pemasok " + c.Code + " " + map[bool]string{true: "diaktifkan", false: "dinonaktifkan"}[active],
 			Data:    map[string]any{"address_id": id, "active": active}})
-		return nil
+		return s.changed(ctx, c, "address")
 	})
 }
 
@@ -100,7 +100,8 @@ func (s *Service) SaveContact(ctx context.Context, supplierID int64, ct domain.C
 	co := company(ctx)
 	now := s.clock.Now()
 	err := s.tx.Do(ctx, func(ctx context.Context) error {
-		if _, err := s.repo.GetForUpdate(ctx, co, supplierID); err != nil {
+		c, err := s.repo.GetForUpdate(ctx, co, supplierID)
+		if err != nil {
 			return notFound(err)
 		}
 		var v validator.Validator
@@ -127,9 +128,11 @@ func (s *Service) SaveContact(ctx context.Context, supplierID int64, ct domain.C
 			}
 		}
 		if ct.IsPrimary {
-			return s.repo.ClearPrimaryContact(ctx, co, supplierID, ct.ID)
+			if err := s.repo.ClearPrimaryContact(ctx, co, supplierID, ct.ID); err != nil {
+				return err
+			}
 		}
-		return nil
+		return s.changed(ctx, c, "contact")
 	})
 	return ct, err
 }
@@ -145,10 +148,14 @@ func contactNotFound(err error) error {
 func (s *Service) DeleteContact(ctx context.Context, supplierID, id int64) error {
 	co := company(ctx)
 	return s.tx.Do(ctx, func(ctx context.Context) error {
-		if _, err := s.repo.GetForUpdate(ctx, co, supplierID); err != nil {
+		c, err := s.repo.GetForUpdate(ctx, co, supplierID)
+		if err != nil {
 			return notFound(err)
 		}
-		return contactNotFound(s.repo.DeleteContact(ctx, co, supplierID, id))
+		if err := s.repo.DeleteContact(ctx, co, supplierID, id); err != nil {
+			return contactNotFound(err)
+		}
+		return s.changed(ctx, c, "contact")
 	})
 }
 
@@ -215,7 +222,7 @@ func (s *Service) SaveBankAccount(ctx context.Context, supplierID int64, b domai
 		data["bank_account_id"] = b.ID
 		s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "suppliers", Action: "bank_account.saved", Target: target(supplierID),
 			Summary: "Rekening " + b.BankName + " pemasok " + sup.Code, Data: data})
-		return nil
+		return s.changed(ctx, sup, "bank_account")
 	})
 	b.AccountNumber = taxid.Mask(b.AccountNumber)
 	return b, warnings, err
@@ -246,7 +253,7 @@ func (s *Service) SetBankAccountActive(ctx context.Context, supplierID, id int64
 		s.audit.Record(ctx, kernel.AuditEntry{Kind: kernel.AuditSecurity, Module: "suppliers", Action: "bank_account.active_changed", Target: target(supplierID),
 			Summary: "Rekening " + b.BankName + " pemasok " + sup.Code + " " + map[bool]string{true: "diaktifkan", false: "dinonaktifkan"}[active],
 			Data:    map[string]any{"bank_account_id": id, "active": active}})
-		return nil
+		return s.changed(ctx, sup, "bank_account")
 	})
 }
 

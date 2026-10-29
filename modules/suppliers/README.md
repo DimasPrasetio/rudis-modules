@@ -60,6 +60,26 @@ Declare a port with the calls you need and map it to `contracts.SupplierClient` 
 Store `supplier_id` as a plain ID. A web page of yours may call
 `GET /api/v1/suppliers/lookup?q=` for a picker.
 
+## Events
+
+What happens to a supplier is announced through `d.Events` (kernel 6), inside the transaction that
+makes the change: a subscriber hears of it only once it committed, through a task of its own —
+after the commit, at least once, in no guaranteed order. Declare what you listen to in your
+`module.json` `listens`; the installer wires it in the composition root. Decode the payload into a
+struct of your own — never import this module. Payloads carry IDs and plain fields only: never a
+tax ID or an account number. Read the current state through the contract (`Get`).
+
+| Event (v1) | Payload | When |
+|---|---|---|
+| `suppliers.supplier.created` | `{id, company_id, code, name, party_type}` | A supplier was added |
+| `suppliers.supplier.changed` | `{id, company_id, code, name, part}` | Its own fields changed (`part` = `"supplier"`: name, tax identity, terms…), or an address was added, changed, deactivated, or activated (`"address"`), or a contact was added, changed, or deleted (`"contact"`), or a bank account was added, changed, deactivated, or activated (`"bank_account"` — the number is never in the event) |
+| `suppliers.supplier.deactivated` | `{id, company_id, code, name}` | Deactivated: new documents may not use it (`Usable` refuses). Only when it was active |
+| `suppliers.supplier.activated` | `{id, company_id, code, name}` | Activated again. Only when it was inactive |
+| `suppliers.supplier.held` | `{id, company_id, code, name, reason}` | Put on hold, or the reason changed. Only on a real change |
+| `suppliers.supplier.released` | `{id, company_id, code, name}` | Taken off hold. Only when it was on hold |
+
+A refused change (validation, a code in use, another company's supplier) publishes nothing.
+
 ## Permissions
 
 | Permission | For |
@@ -77,6 +97,10 @@ Store `supplier_id` as a plain ID. A web page of yours may call
 
 ## Changes
 
+- **0.3.0** — lifecycle events: `suppliers.supplier.created`, `.changed` (with the part that
+  changed — `bank_account` too, never the number), `.deactivated`, `.activated`, `.held`,
+  `.released`, published inside the transaction that makes the change (see Events).
+  `application.NewService` takes the kernel's `d.Events`.
 - **0.2.0** — tax identity hardened (taxid 0.2.0): an NPWP not starting with `0` must be a
   valid NIK and belong to a resident individual, the all-zero placeholder is refused, NIK regions
   are checked; new kind `other`. Every ID of a person is masked, including an individual's NPWP.
