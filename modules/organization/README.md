@@ -111,5 +111,7 @@ pages.
   (`{user_id, company_id, branch_id, unplaced_by}`) in the same transaction as the removal and
   its security record; `rbac` ≥ 0.7.0 revokes the roles held in that unit. Deactivating a
   company or branch still unplaces nobody and publishes nothing (documented). The Penempatan
-  page says so when confirming.
+  page says so when confirming. The web provider sets ui-core's display time zone
+  (`setDisplayTimeZone`, ui-core ≥ 0.6.0) to the zone of the company or branch the tab works in,
+  so every date and time on every page follows it; signed out, WIB applies again.
 - **0.1.0** — first version.

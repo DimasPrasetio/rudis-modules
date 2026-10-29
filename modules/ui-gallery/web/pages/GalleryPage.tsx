@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Download, Pencil, Plus, Printer, Trash2 } from "lucide-react";
+import { Download, Maximize2, Minimize2, Pencil, Plus, Printer, Trash2 } from "lucide-react";
 import { Button } from "@/shared/components/primitives/button";
 import { Checkbox } from "@/shared/components/primitives/checkbox";
 import { Input } from "@/shared/components/primitives/input";
@@ -22,7 +22,7 @@ import { SectionCard } from "@/shared/components/ui/section-card";
 import { CardSkeleton, TableSkeleton } from "@/shared/components/ui/skeletons";
 import { StatusBadge } from "@/shared/components/ui/status-badge";
 import { SummaryCard } from "@/shared/components/ui/summary-card";
-import { DocNumber, Money, Qty } from "@/shared/components/ui/values";
+import { DateTimeValue, DocNumber, Money, Qty } from "@/shared/components/ui/values";
 import { ActionMenu } from "@/shared/components/ui/action-menu";
 import { DataTable } from "@/shared/components/ui/data-table";
 import type { DataTableColumn, DataTableSort } from "@/shared/components/ui/data-table";
@@ -62,15 +62,12 @@ import { DateRangePicker } from "@/shared/components/ui/date-range-picker";
 import { ErrorSummary } from "@/shared/components/ui/error-summary";
 import { PeriodPicker } from "@/shared/components/ui/period-picker";
 import { UnsavedChangesGuard } from "@/shared/components/ui/unsaved-changes-guard";
-import { formatDate, todayISO } from "@/shared/lib/format";
+import { formatDate, formatDateTime, todayISO, zoneAbbrev } from "@/shared/lib/format";
 // 0.15–0.17
-import { Maximize2, Minimize2 } from "lucide-react";
-import { DateTimeValue } from "@/shared/components/ui/values";
 import { useFullscreen } from "@/shared/hooks/use-fullscreen";
 import { useIdleReset } from "@/shared/hooks/use-idle-reset";
 import { setDensity, useDensity } from "@/shared/lib/density";
 import type { Density } from "@/shared/lib/density";
-import { formatDateTime, zoneAbbrev } from "@/shared/lib/format";
 import { setDisplayTimeZone, useDisplayTimeZone } from "@/shared/lib/timezone";
 
 interface Order {

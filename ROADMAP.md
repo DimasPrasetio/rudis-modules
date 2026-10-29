@@ -191,33 +191,33 @@ modulnya ditulis.
 | Status | Modul | Jenis | Menyediakan |
 |---|---|---|---|
 | ✅ 0.8.0 | `auth` | fullstack | login email + sandi, sesi server |
-| ✅ 0.8.0 | `users` | fullstack | kontrak `UserClient` |
-| ✅ 0.6.0 | `rbac` | fullstack | peran & izin per perusahaan/cabang |
-| ✅ 0.1.0 | `organization` | fullstack | `OrganizationClient`; event `organization.company.created` |
+| ✅ 0.9.0 | `users` | fullstack | kontrak `UserClient` |
+| ✅ 0.7.0 | `rbac` | fullstack | peran & izin per perusahaan/cabang; kontrak `RoleHolders` |
+| ✅ 0.2.0 | `organization` | fullstack | `OrganizationClient`; event `organization.company.created`, `organization.user.unplaced` |
 | ✅ 0.3.1 | `settings` | fullstack | `SettingsClient` (profil perusahaan, NPWP, logo) |
 | ✅ 0.3.0 | `audit-log` | fullstack | jejak audit `d.Audit` |
 | ✅ 0.3.0 | `files` | fullstack | `FileClient` (unggah ke `DATA_DIR`) |
 | ✅ 0.3.0 | `mailer` | fullstack | `MailClient` (antrean email per perusahaan) |
 | ✅ 0.1.0 | `numbering` | fullstack | `NumberingClient` (nomor dokumen) |
 | ✅ 0.1.0 | `period` | fullstack | `PeriodClient` (tutup buku per area) |
-| ✅ 0.2.0 | `customers` | fullstack | `CustomerClient` (identitas pajak Coretax) |
-| ✅ 0.2.0 | `suppliers` | fullstack | `SupplierClient` |
+| ✅ 0.3.0 | `customers` | fullstack | `CustomerClient` (identitas pajak Coretax); event siklus hidup |
+| ✅ 0.3.0 | `suppliers` | fullstack | `SupplierClient`; event siklus hidup |
 | ✅ 0.1.0 | `money` | gokit | Rupiah, kuantitas, tarif presisi |
 | ✅ 0.1.0 | `docstate` | gokit | draft → posted → cancelled → amended |
 | ✅ 0.2.0 | `taxid` | gokit | NPWP 16 digit, NIK |
-| ✅ 0.6.0 | `app-shell` | web | bingkai halaman, sidebar dari nav modul |
-| ✅ 0.5.0 | `ui-core` | ui | primitif & layout Bingkai Navy |
-| ✅ 0.2.1 | `ui-data` | ui | DataTable |
-| ✅ 0.3.0 | `ui-forms` | ui | field, pencarian, alamat, `MoneyInput` |
-| ✅ 0.1.0 | `ui-feedback` | ui | toast, dialog konfirmasi |
-| ✅ 0.1.2 | `ui-gallery` | web | galeri komponen kit |
-| ✅ 0.1.2 | `bingkai-navy` | preset | tema back-office |
+| ✅ 0.7.0 | `app-shell` | web | bingkai halaman, sidebar dari nav modul, breadcrumb dari halaman |
+| ✅ 0.6.0 | `ui-core` | ui | primitif & layout, zona waktu tampilan, density, breadcrumb |
+| ✅ 0.3.0 | `ui-data` | ui | DataTable (tautan identitas, tata letak HP, pilih semua lintas halaman) |
+| ✅ 0.4.0 | `ui-forms` | ui | field, pencarian, alamat, `MoneyInput`, `ErrorSummary`, pemilih tanggal/periode |
+| ✅ 0.2.0 | `ui-feedback` | ui | toast (dengan Urungkan), dialog konfirmasi, `Banner` |
+| ✅ 0.2.0 | `ui-gallery` | web | galeri komponen kit |
+| ✅ 0.2.0 | `bingkai-navy` | preset | tema back-office, density sentuh/kiosk |
 
 ## Ringkasan 89 modul baru
 
 | Gelombang | Fokus | Jumlah | Selesai |
 |---|---|---|---|
-| 0 | Perbaikan fondasi (audit) — bukan modul baru | 20 butir | 10 |
+| 0 | Perbaikan fondasi (audit) — bukan modul baru | 20 butir | 18 (P1 selesai; 0.18 menunggu issue, 0.20 P2 terbuka) |
 | 1 | Kit dasar | 10 | 0 |
 | 2 | Platform lintas bidang | 14 | 0 |
 | 3 | Layanan, kantor & publik | 11 | 0 |
@@ -237,7 +237,9 @@ dibutuhkan, tetapi jarang menjadi kebutuhan pertama.
 ## Gelombang 0 — Perbaikan fondasi (audit 28 Oktober 2026)
 
 Audit fungsional, UI/UX, dan arsitektur atas modul yang sudah ada sebelum roadmap dimulai.
-**P0** sudah diperbaiki; **P1** dikerjakan paling lambat sebelum gelombang yang membutuhkannya.
+**P0** dan **P1** sudah diperbaiki (29 Oktober 2026); 0.18 menunggu issue Kernel request dibuka di
+rudis-monorepo (teksnya di `docs/kernel-requests/`); **P2** (0.20) terbuka dan diambil bila sebuah
+gelombang membutuhkannya.
 Akar masalahnya kini menjadi [syarat wajib](#syarat-wajib-setiap-modul--pelajaran-audit-28-oktober-2026)
 untuk setiap modul berikutnya. Kolom *Syarat wajib* menunjuk kelompok dan nomor butirnya
 (mis. `B7` = kelompok B, butir 7).
@@ -254,15 +256,15 @@ untuk setiap modul berikutnya. Kolom *Syarat wajib* menunjuk kelompok dan nomor 
 | 0.8 | ✅ | NPWP tak berawalan 0 = NIK dan diperiksa sebagai NIK, nilai serba-nol ditolak, kode provinsi NIK, jenis "Other ID", `DefaultNITKU`; NITKU default ikut pindah saat NPWP berubah | `taxid` 0.2.0, `customers` 0.2.0, `suppliers` 0.2.0 | C15, D17 |
 | 0.9 | ✅ | `MoneyInput` (titik ribuan, koma desimal, tanpa floating point), dipakai di batas kredit | `ui-forms` 0.3.0, `customers` 0.2.0 | F24 |
 | 0.10 | ✅ | Fokus keyboard ≥3:1 di semua kontrol (cincin `--ring` 4,3–6,8:1), opsi pilihan terlihat saat fokus, tanpa tombol bersarang, FileDropzone, `autocomplete`, skip link, judul per halaman, `aria-current`, reduced-motion | `ui-core` 0.5.0, `ui-forms` 0.3.0, `ui-data` 0.2.1, `app-shell` 0.6.0, `ui-gallery` 0.1.2, `bingkai-navy` 0.1.2 | F23 |
-| 0.11 | ⬜ P1 — sebelum `approvals` (#13) | Peran per perusahaan atau templat peran; audit pemberian admin saat start; peran dicatat `security` di dalam transaksi; kontrak `RoleHolders` | `rbac` | B9, E19 |
-| 0.12 | ⬜ P1 — sebelum `approvals` (#13) | Penempatan dicabut → peran di perusahaan itu ikut dicabut (event organization, didengar rbac) | `organization`, `rbac` | E20 |
-| 0.13 | ⬜ P1 — sebelum `search` (#88), `crm` (#32) | Event siklus hidup data master (`customers`, `suppliers`, `users`) | `customers`, `suppliers`, `users` | E18 |
-| 0.14 | ⬜ P1 — sebelum gelombang 2 | `ErrorSummary` + penjaga perubahan belum disimpan; `DatePicker` id-ID + rentang dengan preset + `PeriodPicker`; toast dengan Urungkan; banner | `ui-forms`, `ui-feedback` | F23, F24 |
-| 0.15 | ⬜ P1 — sebelum gelombang 2 | Tabel: identitas baris sebagai tautan, state tanpa menghilangkan header, tata letak HP, header mengikuti density, pilih semua lintas halaman, pengumuman jumlah terpilih | `ui-data` | F25 |
-| 0.16 | ⬜ P1 — sebelum gelombang 2 | Breadcrumb yang bisa kembali ke daftar (API crumbs); tanggal mengikuti zona perusahaan/cabang | `app-shell`, `ui-core` | F23 |
-| 0.17 | ⬜ P1 — sebelum gelombang 3 (`visitor-log`, `queue`) dan 5 | Density sentuh/kiosk (target 44–48 px, tanpa hover, layar penuh + reset idle) | `bingkai-navy` atau preset sentuh baru | F23 |
-| 0.18 | ⬜ P1 | Kernel request: cincin fokus Button/FIELD ≥3:1 di kernel (kini ditimpa preset); penanda "satu atau banyak perusahaan" yang diekspor kernel | kernel (rudis-monorepo) | F23 |
-| 0.19 | ⬜ P1 | Alat: `npm run sandbox` gagal bila `organization` dipasang bersama `users` (siklus port terlambat); `testbed --only documents` gagal bila `.testbed/` belum ada | `scripts/` | G27 |
+| 0.11 | ✅ | Peran per perusahaan atau templat peran; audit pemberian admin saat start; peran dicatat `security` di dalam transaksi; kontrak `RoleHolders` | `rbac` 0.7.0 | B9, E19 |
+| 0.12 | ✅ | Penempatan dicabut → peran di perusahaan itu ikut dicabut (event organization, didengar rbac) | `organization` 0.2.0, `rbac` 0.7.0 | E20 |
+| 0.13 | ✅ | Event siklus hidup data master (`customers`, `suppliers`, `users`) | `customers` 0.3.0, `suppliers` 0.3.0, `users` 0.9.0 | E18 |
+| 0.14 | ✅ | `ErrorSummary` + penjaga perubahan belum disimpan; `DatePicker` id-ID + rentang dengan preset + `PeriodPicker`; toast dengan Urungkan; banner | `ui-forms` 0.4.0, `ui-feedback` 0.2.0, `ui-gallery` 0.2.0 | F23, F24 |
+| 0.15 | ✅ | Tabel: identitas baris sebagai tautan, state tanpa menghilangkan header, tata letak HP, header mengikuti density, pilih semua lintas halaman, pengumuman jumlah terpilih | `ui-data` 0.3.0 | F25 |
+| 0.16 | ✅ | Breadcrumb yang bisa kembali ke daftar (API crumbs); tanggal mengikuti zona perusahaan/cabang | `app-shell` 0.7.0, `ui-core` 0.6.0, `organization` 0.2.0 | F23 |
+| 0.17 | ✅ | Density sentuh/kiosk (target 44–48 px, tanpa hover, layar penuh + reset idle) | `bingkai-navy` 0.2.0 (density `touch`), `ui-core` 0.6.0 (layar penuh, reset idle) | F23 |
+| 0.18 | 🟡 teks siap, issue belum dibuka | Kernel request: cincin fokus Button/FIELD ≥3:1 di kernel (kini ditimpa preset); penanda "satu atau banyak perusahaan" yang diekspor kernel | kernel (rudis-monorepo) — teks: `docs/kernel-requests/0001-focus-ring-and-company-count.md` | F23 |
+| 0.19 | ✅ | Alat: `npm run sandbox` gagal bila `organization` dipasang bersama `users` (siklus port terlambat); `testbed --only documents` gagal bila `.testbed/` belum ada | `scripts/` (cek di skenario `lifecycle`) | G27 |
 | 0.20 | ⬜ P2 | MFA TOTP + kode pemulihan, daftar sesi aktif & cabut, undangan pengguna lewat email, wajib ganti sandi, daftar sandi bocor + 15 karakter; hard lock periode; bounce email; deteksi duplikat pelanggan; rantai hash audit; mode gelap | `auth`, `users`, `period`, `mailer`, `customers`, `audit-log`, tema | B, C |
 
 ## Gelombang 1 — Kit dasar

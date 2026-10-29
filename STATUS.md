@@ -101,6 +101,16 @@ fixed; add one when you accept a limit.
 - **Audit is best-effort (kernel).** When writing an audit record fails, the kernel logs it and
   the change still commits, so a reopened period or a raised number can lack its security
   record. Candidate for a kernel request.
+- **rbac's bootstrap record needs audit-log built first (`rbac`).** The Administrator grant at
+  start is recorded as `security` inside `rbac.New`; it reaches the audit table only when the
+  audit-log module comes before rbac in the registry (install audit-log first, as `full` does) —
+  otherwise the kernel logs it.
+- **Unplacing a company's last Administrator (`organization` → `rbac`).** The roles held there
+  are revoked with the placement (the person can no longer enter); the company is then without
+  an administrator until the home company's Administrators place and appoint one.
+- **Migration 004 of `rbac` cannot be fully undone.** Rolling it back keeps company 1's roles;
+  a role that existed only in another company is lost (its members fall back to company 1's
+  role of the same name, if any).
 - **Testbed flake under load (kernel).** `TestMySQLDedupeQueuesBehindARunningTask` can time out
   when the machine is busy (other MySQL work running). It passes alone; rerun before blaming a
   module.
@@ -125,6 +135,27 @@ fixed; add one when you accept a limit.
 
 Newest first. One entry per change that released something or changed how the library works:
 date, what, the tags it created.
+
+- **29 Oct 2026 — Gelombang 0, P1: the rest of the audit's fixes (ROADMAP.md › 0.11–0.19).**
+  - Released: `rbac` 0.7.0, `organization` 0.2.0, `customers` 0.3.0, `suppliers` 0.3.0,
+    `users` 0.9.0, `ui-forms` 0.4.0, `ui-feedback` 0.2.0, `ui-data` 0.3.0, `ui-core` 0.6.0,
+    `app-shell` 0.7.0, `ui-gallery` 0.2.0, `bingkai-navy` 0.2.0.
+  - Architecture: roles are per company (`rbac` scoped, migration 004), every role and
+    membership change — the start-up grant too — is a `security` record inside its transaction,
+    contract `RoleHolders` for a coming `approvals` module; a placement taken away publishes
+    `organization.user.unplaced` and rbac revokes the roles held there; customers, suppliers,
+    and users publish lifecycle events (`created`, `changed`, `deactivated`, `activated`, and
+    `held`/`released`), proven delivered after commit and never for a refused change.
+  - UI: `ErrorSummary` + `FormField name`, the unsaved-changes guard, `DatePicker` /
+    `DateRangePicker` with presets / `PeriodPicker` (id-ID, no date library), `Banner`,
+    `notify.undoable`; `DataTable` with the identity as a real link, states that keep the
+    header, a card layout on phones, selection across pages announced to screen readers;
+    breadcrumbs set by the page (`PageHeader crumbs`); dates follow the company or branch's
+    zone (`setDisplayTimeZone`, set by organization); density `touch` (44 px targets) with
+    full screen and idle reset for kiosks.
+  - Tools: `sandbox.mjs` wires late ports after their provider (users ↔ organization is no
+    cycle); the testbed makes `.testbed/` itself. The Kernel request text for 0.18 is in
+    `docs/kernel-requests/`; the issue is opened by the maintainer.
 
 - **28 Oct 2026 — ROADMAP.md: one rule, one kit, for Indonesian rules (89 modules).**
   - `idtax` became `taxrules` and now holds every tax rate and calculation, PPh 21 (TER, PTKP,
