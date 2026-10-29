@@ -1168,6 +1168,14 @@ async function lifecycle() {
     g("checkout", "--", "modules/users/README.md");
     r = check();
     expect("the same kernel update on its own, with its STATUS.md log line, passes", r.status === 0, r.stderr);
+    g("checkout", "--", "kernel", "STATUS.md");
+    // The sandbox: a late port (users' Placements ← organization, which needs users) is no
+    // cycle; it is wired after its provider, as module.mjs upgrade --port does in a project.
+    const sb = join(lib, ".sandbox", "late");
+    r = spawnSync(process.execPath, [join(lib, "scripts/sandbox.mjs"), "users", "organization", "--dir", sb, "--no-setup"], { cwd: lib, encoding: "utf8" });
+    const sbReg = existsSync(join(sb, "apps/api/internal/modules/registry.go")) ? readFileSync(join(sb, "apps/api/internal/modules/registry.go"), "utf8") : "";
+    expect("sandbox.mjs users organization: the late Placements port is wired after organization, not reported as a cycle",
+      r.status === 0 && sbReg.indexOf("usersModule.UsePlacements(usersPlacements{organization: organizationModule.Client()})") > sbReg.indexOf("organization.New(") && sbReg.includes("rudis:modules:end"), r.stdout + r.stderr);
   } catch (err) {
     fail(`lifecycle: ${err.message}`);
   } finally {
