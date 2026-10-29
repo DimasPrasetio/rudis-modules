@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { cn } from "cn";
-import { formatIDR, formatNumber } from "@/shared/lib/format";
+import { formatDateTime, formatIDR, formatNumber, zoneAbbrev } from "@/shared/lib/format";
+import { useDisplayTimeZone } from "@/shared/lib/timezone";
 
 /**
  * Money: whole rupiah, tabular, right-aligned. `accounting` writes a negative as "(1.250.000)"
@@ -51,5 +52,24 @@ export function DocNumber({ value, copyable = false, className }: { value: strin
         </button>
       )}
     </span>
+  );
+}
+
+/**
+ * An instant (a Date, or an RFC 3339 string from the API) in the display zone — "16 Okt 2026
+ * 14:30" — with the zone's abbreviation ("WIB") as the title, and beside the text with `showZone`.
+ * Re-renders when the display zone changes.
+ */
+export function DateTimeValue({ value, showZone = false, className }: { value: string | Date | null | undefined; showZone?: boolean; className?: string }) {
+  const tz = useDisplayTimeZone();
+  const text = formatDateTime(value, tz);
+  if (text === "–") return <span className={className}>–</span>;
+  const abbrev = zoneAbbrev(tz);
+  const iso = value instanceof Date ? value.toISOString() : (value ?? undefined);
+  return (
+    <time dateTime={iso} title={`${text} ${abbrev}`} className={cn("tabular whitespace-nowrap", className)}>
+      {text}
+      {showZone && <span className="ml-1 text-muted-foreground">{abbrev}</span>}
+    </time>
   );
 }

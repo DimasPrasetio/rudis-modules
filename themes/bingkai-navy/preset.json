@@ -1,14 +1,15 @@
 {
   "id": "bingkai-navy",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "title": "Bingkai Navy",
-  "summary": "Dense back-office look: dark-navy frame around a light canvas, navy brand, Inter + Plus Jakarta Sans + Geist Mono, 14px base.",
+  "summary": "Dense back-office look: dark-navy frame around a light canvas, navy brand, Inter + Plus Jakarta Sans + Geist Mono, 14px base; a touch density (44px controls) for POS and kiosk screens of the same app.",
   "when_to_use": [
     "Back-office and admin apps used for hours a day on desktop: ERP, inventory, finance, HR, internal tools.",
-    "Data-dense screens: tables, documents, forms with many fields."
+    "Data-dense screens: tables, documents, forms with many fields.",
+    "Touch-first screens of such an app — POS on a tablet, attendance or visitor kiosk, queue display, kitchen screen — with the touch density (ui-core setDensity(\"touch\")), not a separate preset."
   ],
   "when_not_to_use": [
-    "Public or marketing pages, consumer apps, and touch-first screens (POS on a tablet): research their own direction."
+    "Public or marketing pages and consumer apps: research their own direction."
   ],
   "npm_dependencies": {
     "@fontsource-variable/geist-mono": "^5.3.0",

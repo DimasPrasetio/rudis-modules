@@ -11,6 +11,10 @@ release.
 
 ## Changes
 
+- **0.2.0** — shows ui-data 0.3.0's `DataTable` (identity link, loading/empty/error that keep
+  the header, selection across pages with a live announcement, card layout at 375px), ui-core
+  0.6.0's density switcher (Rapat / Normal / Lega / Sentuh), full screen, idle reset,
+  `PageHeader crumbs`, and the display time zone (WIB / WITA / WIT).
 - **0.1.2** — shows `MoneyInput` (whole Rupiah, two decimals, negative with bounds) and `AddressFields` with autofill (ui-forms 0.3.0).
 - **0.1.1** — shows `DigitsInput` and `AddressFields` (ui-forms 0.2.0).
 - **0.1.0** — first version.

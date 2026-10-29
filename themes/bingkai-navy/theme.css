@@ -83,6 +83,13 @@ html[data-density="compact"] {
 html[data-density="comfortable"] {
   --row-py: 0.875rem;
 }
+/* Touch / kiosk (POS, absensi, buku tamu, antrean, KDS): rows of 52px, every control at least
+   44px (WCAG 2.2 · 2.5.8 asks 24; Material and HIG ask 44–48 for a finger), body text 15px.
+   Colors are unchanged, so every pair stays AA. Set with ui-core's setDensity("touch"). */
+html[data-density="touch"] {
+  --row-py: 1rem;
+  --control-h: 2.75rem;
+}
 
 /* Motion tokens used by the UI kits (the global loading bar). */
 @theme {
@@ -246,4 +253,45 @@ html[data-density="comfortable"] {
    be 3.44:1). Sidebar menu items draw their own --sidebar-ring ring. */
 [data-sidebar="sidebar"] [data-slot="button"]:focus-visible {
   outline-color: var(--sidebar-ring);
+}
+
+/* Touch density (html[data-density="touch"]): the 44px minimum on every control, outside the
+   layers so it wins over a size utility (h-8, size-8). Checkbox, radio, and switch keep their
+   box — their hit area is the label around them. Tailwind 4 already draws `hover:` styles only
+   where a pointer can hover (@media (hover: hover)), so nothing sticks after a tap; here the
+   row and sidebar hover backgrounds are dropped too, since a finger never sees them. */
+html[data-density="touch"] body {
+  font-size: 0.9375rem;
+}
+html[data-density="touch"] :is(
+    button:not([role="checkbox"]):not([role="radio"]):not([role="switch"]),
+    [role="button"],
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"],
+    [role="option"],
+    [role="tab"],
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select,
+    textarea,
+    a[data-slot="sidebar-menu-button"]
+  ) {
+  min-height: var(--control-h);
+}
+html[data-density="touch"] :is([data-size^="icon"], [data-slot="sidebar-trigger"], [data-slot="sidebar-menu-action"]) {
+  min-width: var(--control-h);
+}
+/* A button inside a table cell (row actions, sort) keeps its 44px target but overlaps the cell's
+   padding instead of stretching the row: a text row stays 52px. */
+html[data-density="touch"] :is(td, th) :is(button:not([role="checkbox"]):not([role="radio"]):not([role="switch"]), [role="button"]) {
+  margin-block: calc((1.25rem - var(--control-h)) / 2);
+}
+/* A label around a checkbox, radio, or switch is its hit area (the kits draw those labels as
+   flex, so the minimum height applies; an inline label keeps its own size). */
+html[data-density="touch"] label:has(> [role="checkbox"], > [role="radio"], > [role="switch"], > input[type="checkbox"], > input[type="radio"]) {
+  min-height: var(--control-h);
+}
+html[data-density="touch"] tbody > tr:not([data-state="selected"]):hover,
+html[data-density="touch"] [data-sidebar="menu-button"]:not([data-active="true"]):hover {
+  background-color: transparent;
 }

@@ -53,6 +53,15 @@ import { ConfirmDialog } from "@/shared/components/ui/confirm-dialog";
 import { ReasonDialog } from "@/shared/components/ui/reason-dialog";
 import { notify } from "@/shared/lib/notify";
 import type { Tone } from "@/shared/lib/tone";
+// 0.15–0.17
+import { Maximize2, Minimize2 } from "lucide-react";
+import { DateTimeValue } from "@/shared/components/ui/values";
+import { useFullscreen } from "@/shared/hooks/use-fullscreen";
+import { useIdleReset } from "@/shared/hooks/use-idle-reset";
+import { setDensity, useDensity } from "@/shared/lib/density";
+import type { Density } from "@/shared/lib/density";
+import { formatDateTime, zoneAbbrev } from "@/shared/lib/format";
+import { setDisplayTimeZone, useDisplayTimeZone } from "@/shared/lib/timezone";
 
 interface Order {
   id: number;
@@ -102,9 +111,40 @@ function Row({ children }: { children: ReactNode }) {
   return <div className="flex flex-wrap items-center gap-3">{children}</div>;
 }
 
+// 0.15–0.17 — the table's states, a fake total across pages, and one instant for the time zones.
+type TableState = "data" | "loading" | "empty" | "error";
+const TOTAL_ORDERS = 128;
+const INSTANT = "2026-10-16T07:30:00Z";
+const DENSITY_OPTIONS: { value: Density; label: string }[] = [
+  { value: "compact", label: "Rapat" },
+  { value: "default", label: "Normal" },
+  { value: "comfortable", label: "Lega" },
+  { value: "touch", label: "Sentuh" },
+];
+const ZONES = [
+  { value: "Asia/Jakarta", label: "WIB — Asia/Jakarta" },
+  { value: "Asia/Makassar", label: "WITA — Asia/Makassar" },
+  { value: "Asia/Jayapura", label: "WIT — Asia/Jayapura" },
+];
+
 export default function GalleryPage() {
   const [sort, setSort] = useState<DataTableSort>({ key: "date", dir: "desc" });
   const [selected, setSelected] = useState<Set<string | number>>(new Set());
+  // 0.15–0.17
+  const [tableState, setTableState] = useState<TableState>("data");
+  const [allPages, setAllPages] = useState(false);
+  const density = useDensity();
+  const fullscreen = useFullscreen();
+  const [taps, setTaps] = useState(0);
+  const [resets, setResets] = useState(0);
+  useIdleReset(10_000, () => {
+    if (taps > 0) {
+      setTaps(0);
+      setResets((n) => n + 1);
+    }
+  });
+  const [customCrumbs, setCustomCrumbs] = useState(false);
+  const timeZone = useDisplayTimeZone();
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState("");
   const [customer, setCustomer] = useState<SelectValue | null>(null);
@@ -126,8 +166,8 @@ export default function GalleryPage() {
   const [address, setAddress] = useState({ ...EMPTY_ADDRESS, line: "Jl. Asia Afrika No. 8", city: "Kota Bandung", province: "Jawa Barat", postal_code: "40111" });
 
   const columns: DataTableColumn<Order>[] = [
-    { header: "Nomor", sortKey: "number", render: (o) => <DocNumber value={o.number} copyable /> },
-    { header: "Tanggal", sortKey: "date", render: (o) => <span className="tabular whitespace-nowrap">{o.date}</span> },
+    { header: "Nomor", sortKey: "number", link: (o) => `/ui-gallery?order=${o.id}`, render: (o) => <DocNumber value={o.number} /> },
+    { header: "Tanggal", sortKey: "date", mobileHidden: true, render: (o) => <span className="tabular whitespace-nowrap">{o.date}</span> },
     { header: "Pelanggan", render: (o) => o.customer },
     { header: "Status", render: (o) => <StatusBadge tone={o.status.tone}>{o.status.label}</StatusBadge> },
     { header: "Total", align: "right", sortKey: "total", render: (o) => <Money value={o.total} /> },
@@ -157,6 +197,7 @@ export default function GalleryPage() {
         title="Galeri UI"
         description="Setiap komponen kit ui-core, ui-data, ui-forms, dan ui-feedback di bawah tema proyek ini."
         meta={<StatusBadge tone="info">Pengembang</StatusBadge>}
+        crumbs={customCrumbs ? [{ label: "Pelanggan", to: "/ui-gallery" }, { label: "Toko Maju Jaya" }] : undefined}
         actions={
           <>
             <ActionMenu items={[{ key: "export", label: "Ekspor", icon: <Download />, onSelect: () => notify.success("Ekspor dimulai") }]} />
@@ -187,15 +228,31 @@ export default function GalleryPage() {
         />
         <DataTable
           columns={columns}
-          rows={ORDERS}
+          rows={tableState === "data" ? ORDERS : []}
           rowKey={(o) => o.id}
+          loading={tableState === "loading"}
+          error={tableState === "error" ? "Server tidak dapat dihubungi (contoh pesan API)." : null}
+          onRetry={() => setTableState("data")}
+          emptyTitle="Belum ada order"
+          emptyDescription="Order yang dibuat akan muncul di sini."
+          emptyAction={
+            <Button size="sm" onClick={() => setTableState("data")}>
+              <Plus /> Buat order pertama
+            </Button>
+          }
           sort={sort}
           onSortChange={setSort}
           selectable
           selectedKeys={selected}
-          onSelectionChange={setSelected}
-          bulkActions={() => (
-            <Button size="sm" variant="outline" onClick={() => notify.success("Label dicetak")}>
+          onSelectionChange={(keys) => {
+            setSelected(keys);
+            setAllPages(false);
+          }}
+          totalCount={TOTAL_ORDERS}
+          allPagesSelected={allPages}
+          onSelectAllPages={() => setAllPages(true)}
+          bulkActions={(keys) => (
+            <Button size="sm" variant="outline" onClick={() => notify.success(allPages ? `Label ${TOTAL_ORDERS} order dicetak` : `Label ${keys.size} order dicetak`)}>
               <Printer /> Cetak label
             </Button>
           )}
@@ -204,8 +261,85 @@ export default function GalleryPage() {
           columnsKey="gallery-orders"
           caption="Contoh daftar order"
         />
-        <Pagination page={page} limit={25} total={128} onPageChange={setPage} onLimitChange={() => undefined} />
+        <Pagination page={page} limit={25} total={TOTAL_ORDERS} onPageChange={setPage} onLimitChange={() => undefined} />
       </section>
+
+      {/* 0.15–0.17 */}
+      <Section title="Tabel: state, pilihan lintas halaman, tata letak HP">
+        <Row>
+          <Segmented
+            aria-label="State tabel"
+            value={tableState}
+            onChange={setTableState}
+            options={[
+              { value: "data", label: "Data" },
+              { value: "loading", label: "Memuat" },
+              { value: "empty", label: "Kosong" },
+              { value: "error", label: "Galat" },
+            ]}
+          />
+          <span className="text-sm text-muted-foreground">Header tabel tetap ada di setiap state. Pilih semua baris di halaman untuk tawaran "Pilih semua {TOTAL_ORDERS} baris"; pilihan dibacakan lewat aria-live.</span>
+        </Row>
+        <p className="text-sm text-muted-foreground">
+          Kolom Nomor adalah tautan sungguhan (⌘/Ctrl-klik membuka tab baru); klik di bagian baris lain tetap membuka panel. Di lebar 375 px setiap baris menjadi kartu — kolom Tanggal disembunyikan di HP (<code className="font-mono">mobileHidden</code>).
+        </p>
+      </Section>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Section title="Density, layar penuh, reset idle">
+          <Row>
+            <Segmented aria-label="Density" value={density} onChange={setDensity} options={DENSITY_OPTIONS} />
+            <span className="text-sm text-muted-foreground">
+              <code className="font-mono">html[data-density="{density}"]</code> — Sentuh: kontrol ≥ 44 px, baris 52 px.
+            </span>
+          </Row>
+          <Row>
+            <Button variant="outline" onClick={fullscreen.toggle} disabled={!fullscreen.supported}>
+              {fullscreen.active ? <Minimize2 /> : <Maximize2 />}
+              {fullscreen.active ? "Keluar layar penuh" : "Layar penuh"}
+            </Button>
+            {!fullscreen.supported && <span className="text-sm text-muted-foreground">Peramban ini tidak mendukung layar penuh.</span>}
+          </Row>
+          <Row>
+            <Button variant="outline" onClick={() => setTaps((n) => n + 1)}>
+              Ketuk ({taps})
+            </Button>
+            <span className="text-sm text-muted-foreground" aria-live="polite">
+              Penghitung kembali ke 0 setelah 10 detik tanpa interaksi (useIdleReset)
+              {resets > 0 && ` — sudah direset ${resets}×`}.
+            </span>
+          </Row>
+        </Section>
+        <Section title="Breadcrumb dan zona waktu tampilan">
+          <Row>
+            <Checkbox id="gallery-crumbs" checked={customCrumbs} onCheckedChange={(v) => setCustomCrumbs(v === true)} />
+            <Label htmlFor="gallery-crumbs">Pakai crumbs halaman: Pelanggan › Toko Maju Jaya</Label>
+          </Row>
+          <p className="text-sm text-muted-foreground">
+            <code className="font-mono">PageHeader crumbs</code> mengganti breadcrumb di header shell; "Pelanggan" menjadi tautan kembali ke daftar. Tanpa crumbs, header memakai grup dan label navigasi.
+          </p>
+          <Row>
+            <Label htmlFor="gallery-tz">Zona waktu tampilan</Label>
+            <div className="w-64">
+              <NativeSelect id="gallery-tz" value={timeZone} onChange={(e) => setDisplayTimeZone(e.target.value)}>
+                {ZONES.map((z) => (
+                  <NativeSelectOption key={z.value} value={z.value}>
+                    {z.label}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </div>
+          </Row>
+          <DescriptionList
+            items={[
+              { label: "Instan dari API", value: <code className="font-mono">{INSTANT}</code> },
+              { label: "formatDateTime", value: `${formatDateTime(INSTANT)} ${zoneAbbrev(timeZone)}` },
+              { label: "DateTimeValue", value: <DateTimeValue value={INSTANT} showZone /> },
+            ]}
+          />
+          <p className="text-sm text-muted-foreground">Modul organisasi memanggil setDisplayTimeZone(me.current.timezone); tanpa itu, WIB.</p>
+        </Section>
+      </div>
 
       <Section title="Tombol">
         <Row>

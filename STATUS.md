@@ -18,7 +18,7 @@ or the testbed's scenarios without touching it.
 
 | Module | Kind | Version | Kernel ≥ | Scoped | Tested in |
 |---|---|---|---|---|---|
-| [app-shell](modules/app-shell/README.md) | web | 0.6.0 | 6 | — | full, organization, documents |
+| [app-shell](modules/app-shell/README.md) | web | 0.7.0 | 6 | — | full, organization, documents |
 | [audit-log](modules/audit-log/README.md) | fullstack | 0.3.0 | 6 | yes | full, organization, documents |
 | [auth](modules/auth/README.md) | fullstack | 0.8.0 | 6 | — | full, no-rbac, auth-alone, lifecycle, organization, documents |
 | [customers](modules/customers/README.md) | fullstack | 0.2.0 | 6 | yes | documents |
@@ -33,16 +33,16 @@ or the testbed's scenarios without touching it.
 | [settings](modules/settings/README.md) | fullstack | 0.3.1 | 6 | yes | full, organization |
 | [suppliers](modules/suppliers/README.md) | fullstack | 0.2.0 | 6 | yes | documents |
 | [taxid](modules/taxid/README.md) | gokit | 0.2.0 | 6 | — | documents |
-| [ui-core](modules/ui-core/README.md) | ui | 0.5.0 | 6 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
-| [ui-data](modules/ui-data/README.md) | ui | 0.2.1 | 3 | — | full, no-rbac, users-alone, lifecycle, organization, documents |
+| [ui-core](modules/ui-core/README.md) | ui | 0.6.0 | 6 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
+| [ui-data](modules/ui-data/README.md) | ui | 0.3.0 | 3 | — | full, no-rbac, users-alone, lifecycle, organization, documents |
 | [ui-feedback](modules/ui-feedback/README.md) | ui | 0.1.0 | 3 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
 | [ui-forms](modules/ui-forms/README.md) | ui | 0.3.0 | 3 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
-| [ui-gallery](modules/ui-gallery/README.md) | web | 0.1.2 | 3 | — | full, lifecycle |
+| [ui-gallery](modules/ui-gallery/README.md) | web | 0.2.0 | 3 | — | full, lifecycle |
 | [users](modules/users/README.md) | fullstack | 0.8.0 | 6 | — | full, no-rbac, users-alone, lifecycle, organization, documents |
 
 | Preset | Version |
 |---|---|
-| [bingkai-navy](themes/bingkai-navy/DESIGN.md) | 0.1.2 |
+| [bingkai-navy](themes/bingkai-navy/DESIGN.md) | 0.2.0 |
 
 | Testbed scenario | Proves |
 |---|---|
