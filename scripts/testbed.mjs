@@ -85,9 +85,14 @@ function run(cmd, args, cwd, label = `${cmd} ${args.join(" ")}`, env) {
   return true;
 }
 
-function scaffold(name) {
+/** A fresh folder under .testbed/ (made on first use — a scenario run alone must not need it). */
+function tempDir(prefix) {
   mkdirSync(join(LIB, ".testbed"), { recursive: true });
-  const dir = mkdtempSync(join(LIB, ".testbed", `${name}-`));
+  return mkdtempSync(join(LIB, ".testbed", prefix));
+}
+
+function scaffold(name) {
+  const dir = tempDir(`${name}-`);
   if (SKILL) {
     const r = spawnSync(process.execPath, [join(SKILL, "scripts/scaffold.mjs"), "--name", HOST_SCAFFOLD.name, "--backend", HOST_SCAFFOLD.backend, "--dir", dir, "--force"], { encoding: "utf8" });
     if (r.status !== 0) throw new Error(`scaffold failed: ${r.stderr}`);
@@ -776,7 +781,7 @@ async function usersAlone() {
 // a calendar job run once across two containers, and the rules that keep modules honest.
 async function kernel6() {
   log("\n=== kernel6: one transaction across modules, events, scope, a Go kit, calendar jobs ===");
-  const lib = mkdtempSync(join(LIB, ".testbed", "lib6-"));
+  const lib = tempDir("lib6-");
   const dir = scaffold("kernel6");
   const g = (...a) => spawnSync("git", ["-C", lib, ...a], { encoding: "utf8" });
   let api;
@@ -913,7 +918,7 @@ async function kernel6() {
 // Runs against a throwaway git copy of the library, so the real repo is never committed to.
 async function lifecycle() {
   log("\n=== lifecycle: module.mjs add / status / upgrade / detach / promote ===");
-  const lib = mkdtempSync(join(LIB, ".testbed", "lib-"));
+  const lib = tempDir("lib-");
   const dir = scaffold("lifecycle");
   const g = (...a) => spawnSync("git", ["-C", lib, ...a], { encoding: "utf8" });
   const cli = (...a) => spawnSync(process.execPath, [join(lib, "scripts/module.mjs"), ...a, "--project", dir], { encoding: "utf8" });
@@ -1139,7 +1144,7 @@ async function lifecycle() {
     writeFileSync(kernelGo, kernelSrc + "\n// a module developer's edit\n");
     r = check();
     expect("an edit to the pinned kernel is refused", r.status === 1 && r.stderr.includes("pinned-kernel") && r.stderr.includes("host/apps/api/internal/kernel/kernel.go"), r.stderr);
-    const hostCopy = mkdtempSync(join(LIB, ".testbed", "host-"));
+    const hostCopy = tempDir("host-");
     let refused = false;
     try { materializeHost(lib, hostCopy); } catch { refused = true; }
     rmSync(hostCopy, { recursive: true, force: true });
@@ -1199,7 +1204,7 @@ for (const tool of ["go", "sqlc", "gofmt"]) {
 // company and branch against MySQL, with no route or job left reading a scope it has not got.
 async function organization() {
   log("\n=== organization: several companies and branches, added to a running app ===");
-  const lib = mkdtempSync(join(LIB, ".testbed", "liborg-"));
+  const lib = tempDir("liborg-");
   const dir = scaffold("organization");
   const g = (...a) => spawnSync("git", ["-C", lib, ...a], { encoding: "utf8" });
   const cli = (...a) => spawnSync(process.execPath, [join(lib, "scripts/module.mjs"), ...a, "--project", dir], { encoding: "utf8" });
@@ -1445,7 +1450,7 @@ async function organization() {
 // module, against MySQL, with two containers posting at once.
 async function documents() {
   log("\n=== documents: money, docstate, numbering, period — the posting recipe end to end ===");
-  const lib = mkdtempSync(join(LIB, ".testbed", "libdoc-"));
+  const lib = tempDir("libdoc-");
   const dir = scaffold("documents");
   const g = (...a) => spawnSync("git", ["-C", lib, ...a], { encoding: "utf8" });
   const cli = (...a) => spawnSync(process.execPath, [join(lib, "scripts/module.mjs"), ...a, "--project", dir], { encoding: "utf8" });

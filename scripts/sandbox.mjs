@@ -21,7 +21,7 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyPreset, installModule, libraryIndex, loadManifest, missingKits, readLock } from "./lib/install.mjs";
+import { applyPreset, installModule, libraryIndex, loadManifest, missingKits, readLock, upgrade } from "./lib/install.mjs";
 import { materializeHost, readKernelLock } from "./lib/kernel.mjs";
 
 const LIB = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -93,14 +93,17 @@ for (const id of inSet) {
   }
 }
 
-// Providers before the modules wired to them.
+// Providers before the modules wired to them. A late port (wired in register.go.late, once
+// every module is built — users' Placements ← organization, which itself needs users) orders
+// nothing: following it would make a cycle out of a wiring the installer handles.
+const isLate = (m, port) => (m.register?.go?.late ?? []).some((l) => l.includes(`{{port:${port}}}`)) && !(m.register?.go?.build ?? []).some((l) => l.includes(`{{port:${port}}}`));
 const order = [];
 const visit = (id, path = []) => {
   if (order.includes(id)) return;
   if (path.includes(id)) die(`ports form a cycle: ${[...path, id].join(" → ")}`);
   for (const p of byId.get(id).ports ?? []) {
     const v = chosen.get(`${id}.${p.name}`);
-    if (typeof v === "string") visit(v, [...path, id]);
+    if (typeof v === "string" && !isLate(byId.get(id), p.name)) visit(v, [...path, id]);
   }
   order.push(id);
 };
@@ -122,16 +125,33 @@ if (preset) {
   applyPreset(LIB, dir, preset);
   process.stdout.write(`✓ preset ${preset}\n`);
 }
+const later = []; // [module, port, provider] — late ports whose provider is installed after them
 for (const id of order) {
   for (const kit of missingKits(LIB, dir, id)) {
     installModule(LIB, dir, kit, {});
     process.stdout.write(`✓ ${kit} (ui kit)\n`);
   }
   if (readLock(dir).modules[id]) continue;
-  const ports = Object.fromEntries((loadManifest(LIB, id).ports ?? []).filter((p) => chosen.has(`${id}.${p.name}`)).map((p) => [p.name, chosen.get(`${id}.${p.name}`)]));
+  const m = loadManifest(LIB, id);
+  const ports = {};
+  for (const p of (m.ports ?? []).filter((p) => chosen.has(`${id}.${p.name}`))) {
+    const v = chosen.get(`${id}.${p.name}`);
+    // A late port whose provider comes later in the order is wired once the provider is in.
+    if (typeof v === "string" && isLate(m, p.name) && !readLock(dir).modules[v]) later.push([id, p.name, v]);
+    else ports[p.name] = v;
+  }
   installModule(LIB, dir, id, { ports });
   const wired = Object.entries(ports).map(([p, v]) => `${p} ← ${typeof v === "string" ? v : v.expr}`).join(", ");
   process.stdout.write(`✓ ${id}${wired ? ` (${wired})` : ""}${opts.ids.includes(id) ? "" : " — needed by the modules asked for"}\n`);
+}
+// What module.mjs upgrade --port does in a project: the late line is written after every block.
+for (const [id, port, provider] of later) {
+  try {
+    upgrade(LIB, dir, id, { ports: { [port]: provider } });
+    process.stdout.write(`✓ ${id} (${port} ← ${provider}, wired late)\n`);
+  } catch (err) {
+    process.stdout.write(`  ⚠ ${id}.${port} not wired to ${provider} (${err.message}) — wire it in ${dir}: node ${relative(dir, join(LIB, "scripts/module.mjs"))} upgrade ${id} --port ${port}=${provider} --project .\n`);
+  }
 }
 const unwired = order.flatMap((id) => (byId.get(id).ports ?? []).filter((p) => !p.required && !chosen.has(`${id}.${p.name}`)).map((p) => `${id}.${p.name} (add ${Object.keys(p.adapters ?? {}).join(" or ") || "an adapter of your own"})`));
 if (unwired.length) process.stdout.write(`  optional ports left off: ${unwired.join(", ")}\n`);
