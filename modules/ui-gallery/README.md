@@ -11,6 +11,9 @@ release.
 
 ## Changes
 
+- **0.2.0** — shows `ErrorSummary` with linked fields, the unsaved-changes guard, `DatePicker`,
+  `DateRangePicker` with presets, `PeriodPicker` (ui-forms 0.4.0), `Banner` per tone, and an
+  undoable toast (ui-feedback 0.2.0).
 - **0.1.2** — shows `MoneyInput` (whole Rupiah, two decimals, negative with bounds) and `AddressFields` with autofill (ui-forms 0.3.0).
 - **0.1.1** — shows `DigitsInput` and `AddressFields` (ui-forms 0.2.0).
 - **0.1.0** — first version.

@@ -10,6 +10,12 @@ export interface FormFieldProps {
   hint?: ReactNode;
   /** Replaces the hint while set. */
   error?: string;
+  /**
+   * The field's name as the API knows it ("email", "customer_id"). Gives the control the stable id
+   * `field-<name>`, which ErrorSummary links to and focusFirstError focuses; without it the id is
+   * generated. Also sets the control's `name` when it has none.
+   */
+  name?: string;
   /** For a control that is not the direct child (e.g. a composite). */
   htmlFor?: string;
   /** Extra beside the label, e.g. a FieldHint or a "Lupa kata sandi?" link. Drawn next to the label,
@@ -17,15 +23,21 @@ export interface FormFieldProps {
   labelAside?: ReactNode;
 }
 
+/** The id a FormField with `name` gives its control: "field-<name>". */
+export function fieldId(name: string): string {
+  return `field-${name}`;
+}
+
 /** Label, control, and its hint or error. Required is a calm "*", read as "wajib diisi". */
-export function FormField({ label, children, required, hint, error, htmlFor, labelAside }: FormFieldProps) {
+export function FormField({ label, children, required, hint, error, name, htmlFor, labelAside }: FormFieldProps) {
   const autoId = useId();
   const messageId = `${autoId}-message`;
-  const single = isValidElement(children) ? (children as ReactElement<{ id?: string }>) : null;
-  const controlId = htmlFor ?? single?.props.id ?? (single ? autoId : undefined);
+  const single = isValidElement(children) ? (children as ReactElement<{ id?: string; name?: string }>) : null;
+  const controlId = htmlFor ?? single?.props.id ?? (name ? fieldId(name) : single ? autoId : undefined);
   const control = single
     ? cloneElement(single as ReactElement<Record<string, unknown>>, {
         id: controlId,
+        name: single.props.name ?? name,
         "aria-invalid": error ? true : undefined,
         "aria-describedby": error || hint ? messageId : undefined,
       })

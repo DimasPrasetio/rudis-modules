@@ -818,10 +818,10 @@
     },
     {
       "id": "ui-feedback",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "kind": "ui",
       "title": "UI feedback kit",
-      "summary": "Telling people what happened: toasts (notify), ConfirmDialog, ReasonDialog, a global loading bar for running requests, and an error boundary with a crash card — mounted once through its provider.",
+      "summary": "Telling people what happened: toasts (notify, with an undoable one), Banner, ConfirmDialog, ReasonDialog, a global loading bar for running requests, and an error boundary with a crash card — mounted once through its provider.",
       "when_to_use": [
         "Every app with a frontend: confirmations, toasts, and a crash screen instead of a blank page."
       ],
@@ -848,10 +848,10 @@
     },
     {
       "id": "ui-forms",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "kind": "ui",
       "title": "UI forms kit",
-      "summary": "Forms: FormField, PasswordInput, DigitsInput, MoneyInput, AddressFields, SearchSelect, AsyncSearchSelect (server search, paging), HierarchicalSelect (tree), Segmented, MultiToggle, DateRangeFields, KeyValueEditor, FieldHint, FormSection/FieldGrid/StickyFooter/ActionRow, LineItemsEditor, FileDropzone, Stepper.",
+      "summary": "Forms: FormField (name → field-<name>), ErrorSummary, UnsavedChangesGuard, PasswordInput, DigitsInput, MoneyInput, AddressFields, SearchSelect, AsyncSearchSelect (server search, paging), HierarchicalSelect (tree), Segmented, MultiToggle, DatePicker (dd/mm/yyyy + calendar), DateRangePicker (presets), PeriodPicker (month), DateRangeFields, KeyValueEditor, FieldHint, FormSection/FieldGrid/StickyFooter/ActionRow, LineItemsEditor, FileDropzone, Stepper.",
       "when_to_use": [
         "Any screen where people enter or edit data."
       ],
@@ -877,7 +877,7 @@
     },
     {
       "id": "ui-gallery",
-      "version": "0.1.2",
+      "version": "0.2.0",
       "kind": "web",
       "title": "UI gallery",
       "summary": "A development page (/ui-gallery) showing every component of the four UI kits in all its variants — to check a preset, compare designs, and pick components.",

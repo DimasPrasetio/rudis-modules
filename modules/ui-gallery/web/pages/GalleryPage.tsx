@@ -53,6 +53,16 @@ import { ConfirmDialog } from "@/shared/components/ui/confirm-dialog";
 import { ReasonDialog } from "@/shared/components/ui/reason-dialog";
 import { notify } from "@/shared/lib/notify";
 import type { Tone } from "@/shared/lib/tone";
+// 0.14 — ErrorSummary, unsaved-changes guard, date pickers, Banner, undoable toast
+import { Link } from "react-router-dom";
+import { Banner } from "@/shared/components/ui/banner";
+import type { BannerTone } from "@/shared/components/ui/banner";
+import { DatePicker } from "@/shared/components/ui/date-picker";
+import { DateRangePicker } from "@/shared/components/ui/date-range-picker";
+import { ErrorSummary } from "@/shared/components/ui/error-summary";
+import { PeriodPicker } from "@/shared/components/ui/period-picker";
+import { UnsavedChangesGuard } from "@/shared/components/ui/unsaved-changes-guard";
+import { formatDate, todayISO } from "@/shared/lib/format";
 
 interface Order {
   id: number;
@@ -124,6 +134,38 @@ export default function GalleryPage() {
   const [reason, setReason] = useState(false);
   const [idNumber, setIdNumber] = useState("3201234567890001");
   const [address, setAddress] = useState({ ...EMPTY_ADDRESS, line: "Jl. Asia Afrika No. 8", city: "Kota Bandung", province: "Jawa Barat", postal_code: "40111" });
+  // 0.14
+  const [signup, setSignup] = useState({ nama: "", email: "toko@maju", pelanggan: null as SelectValue | null });
+  const [signupErrors, setSignupErrors] = useState<Record<string, string>>({});
+  const [dirty, setDirty] = useState(false);
+  const [birthDate, setBirthDate] = useState("");
+  const [dueDate, setDueDate] = useState(todayISO());
+  const [reportRange, setReportRange] = useState({ from: "", to: "" });
+  const [period, setPeriod] = useState("");
+  const [banners, setBanners] = useState<BannerTone[]>(["info", "warning", "danger", "success"]);
+  const [archived, setArchived] = useState(false);
+
+  const SIGNUP_LABELS = { nama: "Nama pelanggan", email: "Email", pelanggan: "Pelanggan induk" };
+
+  function submitSignup() {
+    const errors: Record<string, string> = {};
+    if (!signup.nama.trim()) errors.nama = "Nama wajib diisi";
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(signup.email)) errors.email = "Email tidak valid";
+    if (signup.pelanggan === null) errors.pelanggan = "Pilih pelanggan induk";
+    setSignupErrors(errors);
+    if (Object.keys(errors).length === 0) notify.success("Formulir terkirim");
+  }
+
+  function archiveOrder() {
+    setArchived(true);
+    notify.undoable("Order SO-2026-00012 diarsipkan", {
+      onUndo: () => {
+        setArchived(false);
+        notify.info("Pengarsipan diurungkan");
+      },
+      onExpire: () => notify.success("Order dihapus dari daftar"),
+    });
+  }
 
   const columns: DataTableColumn<Order>[] = [
     { header: "Nomor", sortKey: "number", render: (o) => <DocNumber value={o.number} copyable /> },
@@ -425,6 +467,113 @@ export default function GalleryPage() {
           </div>
         </SectionCard>
       </div>
+
+      {/* 0.14 */}
+      <Section title="Ringkasan galat (ErrorSummary)">
+        <p className="text-sm text-muted-foreground">
+          Pola GOV.UK: daftar galat di atas formulir mengambil fokus saat muncul dan setiap baris menaut ke fieldnya (FormField dengan <code>name</code>); pesan di samping kontrol tetap ada.
+        </p>
+        <ErrorSummary errors={signupErrors} labels={SIGNUP_LABELS} />
+        <form
+          noValidate
+          className="flex flex-col gap-5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitSignup();
+          }}
+        >
+          <FieldGrid columns={3}>
+            <FormField label={SIGNUP_LABELS.nama} name="nama" required error={signupErrors.nama}>
+              <Input value={signup.nama} onChange={(e) => setSignup({ ...signup, nama: e.target.value })} autoComplete="organization" />
+            </FormField>
+            <FormField label={SIGNUP_LABELS.email} name="email" required error={signupErrors.email}>
+              <Input type="email" value={signup.email} onChange={(e) => setSignup({ ...signup, email: e.target.value })} autoComplete="email" />
+            </FormField>
+            <FormField label={SIGNUP_LABELS.pelanggan} name="pelanggan" error={signupErrors.pelanggan}>
+              <SearchSelect options={CUSTOMERS} value={signup.pelanggan} onChange={(v) => setSignup({ ...signup, pelanggan: v })} allowClear />
+            </FormField>
+          </FieldGrid>
+          <Row>
+            <Button type="submit">Kirim</Button>
+            <Button type="button" variant="outline" onClick={() => setSignupErrors({})}>
+              Bersihkan galat
+            </Button>
+          </Row>
+        </form>
+      </Section>
+
+      <Section title="Penjaga perubahan belum disimpan">
+        <p className="text-sm text-muted-foreground">
+          Saat formulir kotor, pindah halaman menanyakan dulu (AlertDialog) dan memuat ulang tab memunculkan konfirmasi peramban. Nyalakan sakelar, lalu klik tautan.
+        </p>
+        <Row>
+          <label className="flex items-center gap-2 text-sm">
+            <Switch checked={dirty} onCheckedChange={setDirty} /> Ada perubahan belum disimpan
+          </label>
+          <Button asChild variant="outline">
+            <Link to="/dashboard">Ke dasbor</Link>
+          </Button>
+        </Row>
+        <UnsavedChangesGuard when={dirty} />
+      </Section>
+
+      <Section title="Tanggal dan periode">
+        <FieldGrid columns={3}>
+          <FormField label="Tanggal lahir" name="tanggal_lahir" hint={`Ketik hh/bb/tttt atau buka kalender; nilai ke API: ${birthDate || "kosong"}`}>
+            <DatePicker value={birthDate} onChange={setBirthDate} max={todayISO()} />
+          </FormField>
+          <FormField label="Jatuh tempo" name="jatuh_tempo" hint={`Minimal hari ini; tampil: ${formatDate(dueDate)}`}>
+            <DatePicker value={dueDate} onChange={setDueDate} min={todayISO()} />
+          </FormField>
+          <FormField label="Periode laporan" name="periode" hint={`Nilai ke API: ${period || "kosong"}`}>
+            <PeriodPicker value={period} onChange={setPeriod} min="2024-01" max={todayISO().slice(0, 7)} />
+          </FormField>
+        </FieldGrid>
+        <FormSection title="Rentang tanggal" description="Dua DatePicker dengan rentang cepat; rentang terbalik diberi tahu di field kedua.">
+          <DateRangePicker from={reportRange.from} to={reportRange.to} onChange={setReportRange} fromName="dari" toName="sampai" />
+        </FormSection>
+      </Section>
+
+      <Section title="Banner">
+        <div className="flex flex-col gap-3">
+          {banners.map((tone) => (
+            <Banner
+              key={tone}
+              tone={tone}
+              title={{ info: "Pemeliharaan terjadwal", warning: "Periode Oktober 2026 belum ditutup", danger: "Koneksi ke server terputus", success: "Pembaruan selesai" }[tone]}
+              actions={
+                tone === "warning" ? (
+                  <Button size="sm" variant="outline" onClick={() => notify.info("Membuka tutup buku")}>
+                    Tutup periode
+                  </Button>
+                ) : undefined
+              }
+              onDismiss={() => setBanners((b) => b.filter((t) => t !== tone))}
+            >
+              {{ info: "Sabtu 1 November 2026 pukul 22.00–23.00 WIB aplikasi tidak dapat diakses.", warning: "Transaksi masih bisa diubah sampai periode ditutup.", danger: "Perubahan tidak tersimpan. Periksa jaringan Anda.", success: "Semua data sudah diperbarui ke versi terbaru." }[tone]}
+            </Banner>
+          ))}
+          {banners.length < 4 && (
+            <Button variant="outline" size="sm" className="self-start" onClick={() => setBanners(["info", "warning", "danger", "success"])}>
+              Tampilkan lagi
+            </Button>
+          )}
+        </div>
+      </Section>
+
+      <Section title="Toast dengan Urungkan">
+        <Row>
+          <Button variant="outline" disabled={archived} onClick={archiveOrder}>
+            Arsipkan order
+          </Button>
+          {archived && <span className="text-sm text-muted-foreground">Diarsipkan — urungkan dari toast dalam 8 detik.</span>}
+          {archived && (
+            <Button variant="ghost" size="sm" onClick={() => setArchived(false)}>
+              Reset contoh
+            </Button>
+          )}
+        </Row>
+      </Section>
 
       <Modal
         open={modal}
