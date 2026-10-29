@@ -18,31 +18,31 @@ or the testbed's scenarios without touching it.
 
 | Module | Kind | Version | Kernel ≥ | Scoped | Tested in |
 |---|---|---|---|---|---|
-| [app-shell](modules/app-shell/README.md) | web | 0.6.0 | 6 | — | full, organization, documents |
+| [app-shell](modules/app-shell/README.md) | web | 0.7.0 | 6 | — | full, organization, documents |
 | [audit-log](modules/audit-log/README.md) | fullstack | 0.3.0 | 6 | yes | full, organization, documents |
 | [auth](modules/auth/README.md) | fullstack | 0.8.0 | 6 | — | full, no-rbac, auth-alone, lifecycle, organization, documents |
-| [customers](modules/customers/README.md) | fullstack | 0.2.0 | 6 | yes | documents |
+| [customers](modules/customers/README.md) | fullstack | 0.3.0 | 6 | yes | documents |
 | [docstate](modules/docstate/README.md) | gokit | 0.1.0 | 6 | — | documents |
 | [files](modules/files/README.md) | fullstack | 0.3.0 | 6 | yes | full, organization |
 | [mailer](modules/mailer/README.md) | fullstack | 0.3.0 | 6 | yes | full, lifecycle, organization |
 | [money](modules/money/README.md) | gokit | 0.1.0 | 6 | — | documents |
 | [numbering](modules/numbering/README.md) | fullstack | 0.1.0 | 6 | yes | documents |
-| [organization](modules/organization/README.md) | fullstack | 0.1.0 | 6 | — | organization, documents |
+| [organization](modules/organization/README.md) | fullstack | 0.2.0 | 6 | — | organization, documents |
 | [period](modules/period/README.md) | fullstack | 0.1.0 | 6 | yes | documents |
-| [rbac](modules/rbac/README.md) | fullstack | 0.6.0 | 6 | — | full, organization, documents |
+| [rbac](modules/rbac/README.md) | fullstack | 0.7.0 | 6 | yes | full, organization, documents |
 | [settings](modules/settings/README.md) | fullstack | 0.3.1 | 6 | yes | full, organization |
-| [suppliers](modules/suppliers/README.md) | fullstack | 0.2.0 | 6 | yes | documents |
+| [suppliers](modules/suppliers/README.md) | fullstack | 0.3.0 | 6 | yes | documents |
 | [taxid](modules/taxid/README.md) | gokit | 0.2.0 | 6 | — | documents |
-| [ui-core](modules/ui-core/README.md) | ui | 0.5.0 | 6 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
-| [ui-data](modules/ui-data/README.md) | ui | 0.2.1 | 3 | — | full, no-rbac, users-alone, lifecycle, organization, documents |
-| [ui-feedback](modules/ui-feedback/README.md) | ui | 0.1.0 | 3 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
-| [ui-forms](modules/ui-forms/README.md) | ui | 0.3.0 | 3 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
-| [ui-gallery](modules/ui-gallery/README.md) | web | 0.1.2 | 3 | — | full, lifecycle |
-| [users](modules/users/README.md) | fullstack | 0.8.0 | 6 | — | full, no-rbac, users-alone, lifecycle, organization, documents |
+| [ui-core](modules/ui-core/README.md) | ui | 0.6.0 | 6 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
+| [ui-data](modules/ui-data/README.md) | ui | 0.3.0 | 3 | — | full, no-rbac, users-alone, lifecycle, organization, documents |
+| [ui-feedback](modules/ui-feedback/README.md) | ui | 0.2.0 | 3 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
+| [ui-forms](modules/ui-forms/README.md) | ui | 0.4.0 | 3 | — | full, no-rbac, auth-alone, users-alone, lifecycle, organization, documents |
+| [ui-gallery](modules/ui-gallery/README.md) | web | 0.2.0 | 3 | — | full, lifecycle |
+| [users](modules/users/README.md) | fullstack | 0.9.0 | 6 | — | full, no-rbac, users-alone, lifecycle, organization, documents |
 
 | Preset | Version |
 |---|---|
-| [bingkai-navy](themes/bingkai-navy/DESIGN.md) | 0.1.2 |
+| [bingkai-navy](themes/bingkai-navy/DESIGN.md) | 0.2.0 |
 
 | Testbed scenario | Proves |
 |---|---|
@@ -53,17 +53,17 @@ or the testbed's scenarios without touching it.
 | `lifecycle` | the module.mjs CLI on a throwaway library copy: add (and a refused add), status, upgrade merging both sides, a conflicting upgrade, detach, a port wired later, remove, release-tag fallback, promote (refused for a rule breach), the library's own documents (status-current, a stale STATUS.md snapshot, rules-documented, testbed-covered, work branches warned and never tagged), and the pinned kernel guards (an edit, a too-new module, a mixed kernel commit refused) |
 | `kernel6` | fixture modules against MySQL: one d.Tx across modules joined by a port, an event delivered once across two containers, companies kept apart, a missed calendar tick caught up once; the rules refusing scope, transaction, and event breaches |
 | `organization` | every module + organization added later, its late ports wired with module.mjs: several companies and branches against MySQL — isolation, refusals, branch heads, deactivation, recovery, public routes and jobs without panic |
-| `documents` | money, docstate, numbering, period through a fixture invoice module: exact amounts, gapless numbers from two containers at once, a rollback giving its number back, closing and reopening the books, a lock moved mid-posting, revisions, company isolation; the exact-numbers rule; customers, suppliers, and taxid: generated codes, NPWP normalized, duplicate tax IDs confirmed, NIK and account numbers masked with audited reveal, credit and bank accounts guarded, a customer on hold or inactive refused by the fixture's posting through its port, companies kept apart |
+| `documents` | money, docstate, numbering, period through a fixture invoice module: exact amounts, gapless numbers from two containers at once, a rollback giving its number back, closing and reopening the books, a lock moved mid-posting, revisions, company isolation; the exact-numbers rule; customers, suppliers, and taxid: generated codes, NPWP normalized, duplicate tax IDs confirmed, NIK and account numbers masked with audited reveal, credit and bank accounts guarded, a customer on hold or inactive refused by the fixture's posting through its port, companies kept apart; the master-data events (customers 0.3, users 0.9) reaching the fixture's subscriber after the commit — none for a refused change |
 <!-- rudis:status:end -->
 
 ## Last verified
 
 | | |
 |---|---|
-| Date | 28 October 2026 |
-| Run on | `4811e1f` (Gelombang 0, all four fix branches merged) |
+| Date | 29 October 2026 |
+| Run on | `abb1c85` (Gelombang 0 P1: 0.11–0.19, every agent branch merged) |
 | `npm run check` | passes |
-| `npm run testbed` | all 8 scenarios: `All testbed checks passed: 465 checks.` — MySQL (local), sqlc 1.31.1, Node 20 |
+| `npm run testbed` | all 8 scenarios: `All testbed checks passed: 483 checks.` — MySQL 8.0.46 (local), sqlc 1.31.1, Node 20, Go 1.25 |
 
 Update this table with every full testbed run you make before a commit: the date, the commit
 you ran it on (`git rev-parse --short HEAD`) plus your change, and the run's last line. When a
@@ -101,6 +101,16 @@ fixed; add one when you accept a limit.
 - **Audit is best-effort (kernel).** When writing an audit record fails, the kernel logs it and
   the change still commits, so a reopened period or a raised number can lack its security
   record. Candidate for a kernel request.
+- **rbac's bootstrap record needs audit-log built first (`rbac`).** The Administrator grant at
+  start is recorded as `security` inside `rbac.New`; it reaches the audit table only when the
+  audit-log module comes before rbac in the registry (install audit-log first, as `full` does) —
+  otherwise the kernel logs it.
+- **Unplacing a company's last Administrator (`organization` → `rbac`).** The roles held there
+  are revoked with the placement (the person can no longer enter); the company is then without
+  an administrator until the home company's Administrators place and appoint one.
+- **Migration 004 of `rbac` cannot be fully undone.** Rolling it back keeps company 1's roles;
+  a role that existed only in another company is lost (its members fall back to company 1's
+  role of the same name, if any).
 - **Testbed flake under load (kernel).** `TestMySQLDedupeQueuesBehindARunningTask` can time out
   when the machine is busy (other MySQL work running). It passes alone; rerun before blaming a
   module.
@@ -125,6 +135,27 @@ fixed; add one when you accept a limit.
 
 Newest first. One entry per change that released something or changed how the library works:
 date, what, the tags it created.
+
+- **29 Oct 2026 — Gelombang 0, P1: the rest of the audit's fixes (ROADMAP.md › 0.11–0.19).**
+  - Released: `rbac` 0.7.0, `organization` 0.2.0, `customers` 0.3.0, `suppliers` 0.3.0,
+    `users` 0.9.0, `ui-forms` 0.4.0, `ui-feedback` 0.2.0, `ui-data` 0.3.0, `ui-core` 0.6.0,
+    `app-shell` 0.7.0, `ui-gallery` 0.2.0, `bingkai-navy` 0.2.0.
+  - Architecture: roles are per company (`rbac` scoped, migration 004), every role and
+    membership change — the start-up grant too — is a `security` record inside its transaction,
+    contract `RoleHolders` for a coming `approvals` module; a placement taken away publishes
+    `organization.user.unplaced` and rbac revokes the roles held there; customers, suppliers,
+    and users publish lifecycle events (`created`, `changed`, `deactivated`, `activated`, and
+    `held`/`released`), proven delivered after commit and never for a refused change.
+  - UI: `ErrorSummary` + `FormField name`, the unsaved-changes guard, `DatePicker` /
+    `DateRangePicker` with presets / `PeriodPicker` (id-ID, no date library), `Banner`,
+    `notify.undoable`; `DataTable` with the identity as a real link, states that keep the
+    header, a card layout on phones, selection across pages announced to screen readers;
+    breadcrumbs set by the page (`PageHeader crumbs`); dates follow the company or branch's
+    zone (`setDisplayTimeZone`, set by organization); density `touch` (44 px targets) with
+    full screen and idle reset for kiosks.
+  - Tools: `sandbox.mjs` wires late ports after their provider (users ↔ organization is no
+    cycle); the testbed makes `.testbed/` itself. The Kernel request text for 0.18 is in
+    `docs/kernel-requests/`; the issue is opened by the maintainer.
 
 - **28 Oct 2026 — ROADMAP.md: one rule, one kit, for Indonesian rules (89 modules).**
   - `idtax` became `taxrules` and now holds every tax rate and calculation, PPh 21 (TER, PTKP,

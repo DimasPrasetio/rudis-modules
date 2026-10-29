@@ -2,6 +2,7 @@ package application_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sort"
@@ -330,7 +331,7 @@ func setup(t *testing.T, perms authz) (*application.Service, *memRepo, *kernelte
 	t.Helper()
 	k := kerneltest.Deps(t)
 	repo := newMemRepo()
-	svc := application.NewService(repo, k.Deps.Tx, k.Deps.Audit, perms, signedIn{}, k.Clock)
+	svc := application.NewService(repo, k.Deps.Tx, k.Deps.Events, k.Deps.Audit, perms, signedIn{}, k.Clock)
 	return svc, repo, k, kerneltest.In(context.Background(), 1, 0)
 }
 
@@ -489,7 +490,7 @@ func TestPersonalDataIsMaskedAndRevealIsAudited(t *testing.T) {
 		t.Error("reveal left no access record")
 	}
 
-	noSensitive := application.NewService(repo, k.Deps.Tx, k.Deps.Audit, authz{application.PermManage: all}, signedIn{}, k.Clock)
+	noSensitive := application.NewService(repo, k.Deps.Tx, k.Deps.Events, k.Deps.Audit, authz{application.PermManage: all}, signedIn{}, k.Clock)
 	if _, _, err := noSensitive.Reveal(ctx, saved.ID); err == nil || status(t, err) != http.StatusForbidden {
 		t.Errorf("reveal without suppliers.sensitive: %v", err)
 	}
@@ -653,7 +654,7 @@ func TestBankAccountsAreGuardedMaskedAndAudited(t *testing.T) {
 		}
 	}
 
-	manageOnly := application.NewService(repo, k.Deps.Tx, k.Deps.Audit, authz{application.PermManage: all}, signedIn{}, k.Clock)
+	manageOnly := application.NewService(repo, k.Deps.Tx, k.Deps.Events, k.Deps.Audit, authz{application.PermManage: all}, signedIn{}, k.Clock)
 	if _, _, err := manageOnly.SaveBankAccount(ctx, sup.ID, domain.BankAccount{BankName: "BRI", AccountNumber: "11112222", AccountHolder: "PT Pemasok Jaya"}); err == nil || status(t, err) != http.StatusForbidden {
 		t.Errorf("changing an account without suppliers.sensitive: %v", err)
 	}
@@ -774,5 +775,174 @@ func TestNoPaymentGoesToAnInactiveOrHeldSupplier(t *testing.T) {
 	}
 	if _, err := svc.DefaultBankAccount(ctx, sup.ID); !errors.Is(err, application.ErrInactive) {
 		t.Errorf("an inactive supplier: %v", err)
+	}
+}
+
+// --- events ---
+
+// eventNames is every published event as "<verb>" or "<verb>:<part>", in order.
+func eventNames(t *testing.T, k *kerneltest.Kit) []string {
+	t.Helper()
+	var out []string
+	for _, ev := range k.Published() {
+		if ev.Version != 1 || !strings.HasPrefix(ev.Name, "suppliers.supplier.") {
+			t.Fatalf("event %s v%d", ev.Name, ev.Version)
+		}
+		name := strings.TrimPrefix(ev.Name, "suppliers.supplier.")
+		if name == "changed" {
+			var p application.SupplierChanged
+			if err := json.Unmarshal(ev.Payload, &p); err != nil {
+				t.Fatal(err)
+			}
+			name += ":" + p.Part
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
+func decode[T any](t *testing.T, ev kernel.Event) T {
+	t.Helper()
+	var p T
+	if err := json.Unmarshal(ev.Payload, &p); err != nil {
+		t.Fatalf("%s payload: %v", ev.Name, err)
+	}
+	return p
+}
+
+func TestEventsFollowTheLifecycle(t *testing.T) {
+	svc, _, k, ctx := setup(t, everything())
+	p := domain.Supplier{Name: "Bu Ani", PartyType: domain.Individual, TaxIDKind: taxid.NIK, TaxID: "3201015508900002"}
+	sup := create(t, svc, ctx, p)
+	pub := k.Published()
+	if len(pub) != 1 || pub[0].Name != "suppliers.supplier.created" || pub[0].Version != 1 {
+		t.Fatalf("after Create, published = %+v", pub)
+	}
+	created := decode[application.SupplierCreated](t, pub[0])
+	if created.ID != sup.ID || created.CompanyID != 1 || created.Code != "PMS-00001" || created.Name != "Bu Ani" || created.PartyType != "individual" {
+		t.Errorf("created payload = %+v", created)
+	}
+
+	sup.Phone = "022 123"
+	if _, err := svc.Update(ctx, sup.ID, application.Input{Supplier: sup}); err != nil {
+		t.Fatal(err)
+	}
+	a, err := svc.SaveAddress(ctx, sup.ID, domain.Address{Label: "Rumah", Line: "Jl. A 1", ForBilling: true, IsDefaultBilling: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetAddressActive(ctx, sup.ID, a.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	ct, err := svc.SaveContact(ctx, sup.ID, domain.Contact{Name: "Ani", IsPrimary: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteContact(ctx, sup.ID, ct.ID); err != nil {
+		t.Fatal(err)
+	}
+	b, _, err := svc.SaveBankAccount(ctx, sup.ID, domain.BankAccount{BankName: "BCA", BankCode: "014", AccountNumber: "1234567890", AccountHolder: "Bu Ani", IsDefault: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetBankAccountActive(ctx, sup.ID, b.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Hold(ctx, sup.ID, "dokumen belum lengkap"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Release(ctx, sup.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetActive(ctx, sup.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetActive(ctx, sup.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	want := "created changed:supplier changed:address changed:address changed:contact changed:contact changed:bank_account changed:bank_account held released deactivated activated"
+	if got := strings.Join(eventNames(t, k), " "); got != want {
+		t.Fatalf("events = %s\nwant     %s", got, want)
+	}
+	pub = k.Published()
+	if held := decode[application.SupplierHeld](t, pub[8]); held.ID != sup.ID || held.Code != "PMS-00001" || held.Reason != "dokumen belum lengkap" {
+		t.Errorf("held payload = %+v", held)
+	}
+	if off := decode[application.SupplierEvent](t, pub[10]); off.ID != sup.ID || off.CompanyID != 1 || off.Name != "Bu Ani" {
+		t.Errorf("deactivated payload = %+v", off)
+	}
+	for _, ev := range pub {
+		if s := string(ev.Payload); strings.Contains(s, "3201") || strings.Contains(s, "1234") || strings.Contains(s, "7890") {
+			t.Errorf("a person's ID or an account number reached %s: %s", ev.Name, s)
+		}
+	}
+}
+
+func TestNoEventWithoutAChange(t *testing.T) {
+	svc, _, k, ctx := setup(t, everything())
+	sup := create(t, svc, ctx, company("CV Tetap"))
+	b, _, err := svc.SaveBankAccount(ctx, sup.ID, domain.BankAccount{BankName: "BCA", BankCode: "014", AccountNumber: "1234567890", AccountHolder: "CV Tetap", IsDefault: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Hold(ctx, sup.ID, "verifikasi"); err != nil {
+		t.Fatal(err)
+	}
+	n := len(k.Published())
+	if err := svc.SetActive(ctx, sup.ID, true); err != nil { // already active
+		t.Fatal(err)
+	}
+	if err := svc.Hold(ctx, sup.ID, "verifikasi"); err != nil { // held for that reason already
+		t.Fatal(err)
+	}
+	if err := svc.SetBankAccountActive(ctx, sup.ID, b.ID, true); err != nil { // already active
+		t.Fatal(err)
+	}
+	if got := len(k.Published()); got != n {
+		t.Fatalf("a change that changed nothing published %d events: %v", got-n, eventNames(t, k)[n:])
+	}
+	if err := svc.Release(ctx, sup.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Release(ctx, sup.ID); err != nil { // not held any more
+		t.Fatal(err)
+	}
+	if got := eventNames(t, k)[n:]; strings.Join(got, " ") != "released" {
+		t.Fatalf("after two releases, published %v", got)
+	}
+}
+
+func TestNoEventOfAFailedTransaction(t *testing.T) {
+	svc, _, k, ctx := setup(t, everything())
+	typed := company("CV Kode")
+	typed.Code = "T-1"
+	sup := create(t, svc, ctx, typed)
+	n := len(k.Published())
+	// Refused changes: a code in use, a hold without a reason, a supplier of another company.
+	if _, err := svc.Create(ctx, application.Input{Supplier: typed}); err == nil {
+		t.Fatal("a duplicate code saved")
+	}
+	if err := svc.Hold(ctx, sup.ID, " "); err == nil {
+		t.Fatal("a hold without a reason")
+	}
+	if err := svc.SetActive(kerneltest.In(context.Background(), 2, 0), sup.ID, false); err == nil {
+		t.Fatal("deactivated from another company")
+	}
+	if got := len(k.Published()); got != n {
+		t.Fatalf("refused changes published %d events", got-n)
+	}
+	// The event is published inside the transaction: a caller's rollback takes it with it.
+	err := k.Deps.Tx.Do(ctx, func(ctx context.Context) error {
+		create(t, svc, ctx, company("CV Batal"))
+		if err := svc.SetActive(ctx, sup.ID, false); err != nil {
+			return err
+		}
+		return errors.New("the caller rolls back")
+	})
+	if err == nil {
+		t.Fatal("the outer transaction did not fail")
+	}
+	if got := len(k.Published()); got != n {
+		t.Fatalf("a rolled-back transaction published %d events", got-n)
 	}
 }

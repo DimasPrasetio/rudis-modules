@@ -7,8 +7,9 @@ only its visual design is carried over here, none of its system or mechanisms.
 ## For whom
 
 Back-office apps used for hours a day on desktop: ERP, inventory, finance, HR, admin tools.
-Dense data, tables, documents, forms with many fields. Not for public pages, consumer apps, or
-touch-first screens such as a POS on a tablet.
+Dense data, tables, documents, forms with many fields. Touch-first screens of the same app — a
+POS on a tablet, an attendance or visitor kiosk, a queue display — use the **touch density**
+(below), not a separate preset. Not for public pages or consumer apps.
 
 ## Principles
 
@@ -56,7 +57,8 @@ Scale (base 14px): `text-2xs` 11 · `xs` 12 · `sm` 13 (tables, labels) · `base
 - **Cards are border-only**; shadows only for floating layers (popover, dropdown, dialog, sheet).
 - 4px grid. Page gutter 24 desktop / 16 mobile. Section gap 24. Max content width 1440px; single
   forms max 960px.
-- Density via `<html data-density>`: compact / default / comfortable → row height 32 / 36 / 44.
+- Density via `<html data-density>`: compact / default / comfortable / touch → row height
+  32 / 36 / 44 / 52 (see Density).
 - Focus: a solid 2px outline in `--ring` with a 2px offset, on every control (inside the
   element, offset −2px, for rows and options in a scrolling list); `--sidebar-ring` on the navy
   frame. Measured: `--ring` 4.86:1 on card, 4.65:1 on background, `--sidebar-ring` 6.77:1 on
@@ -67,6 +69,27 @@ Scale (base 14px): `text-2xs` 11 · `xs` 12 · `sm` 13 (tables, labels) · `base
   `prefers-reduced-motion` → none (animations run once, never loop).
 - Every page names the tab ("Pelanggan · <app>", ui-core PageHeader) and starts with a skip link
   to the content (app-shell), WCAG 2.4.2 and 2.4.1.
+
+## Density
+
+One token on `<html data-density>` (ui-core `setDensity`, remembered per browser) packs the
+same screens tighter or looser; colors never change, so every pair stays AA.
+
+| Density | Row | Controls | When |
+|---|---|---|---|
+| `compact` | 32px | as drawn (36px fields, 32px small buttons) | Power users on large screens: long ledgers, stock lists, side-by-side comparison |
+| `default` | 36px | as drawn | Back-office work on a desktop — the preset's own |
+| `comfortable` | 44px | as drawn | Reading and reviewing: approvals, audit trails, a detail page open for a while |
+| `touch` | 52px | every control at least 44 × 44px (`--control-h`), body text 15px | Screens used with a finger: POS, absensi, buku tamu, antrean, KDS, a tablet in a warehouse |
+
+Under `touch` the minimum applies to buttons, menu items, options, tabs, fields, selects,
+sidebar entries, and icon-only buttons; checkbox, radio, and switch keep their box and get the
+44px from the label around them (the table's selection checkbox carries its own hit area).
+Hover-only affordances are never relied on: Tailwind draws `hover:` styles only where a pointer
+can hover, and under `touch` the row and sidebar hover backgrounds are dropped. A kiosk screen
+also uses ui-core's `useFullscreen` (full screen from a tap) and `useIdleReset` (back to the
+start screen after inactivity). Targets at every density stay at or above WCAG 2.2 · 2.5.8's
+24px.
 
 ## Page templates
 
@@ -86,6 +109,10 @@ chart types (line, bar, donut are enough); floating chat bubbles.
 
 ## Changes
 
+- **0.2.0** — a touch / kiosk density (`html[data-density="touch"]`): rows of 52px, every
+  control at least 44px (`--control-h`), body text 15px, no hover-only affordances — POS,
+  absensi, buku tamu, antrean, and KDS screens use this preset instead of one of their own.
+  The header of a table follows the density too (ui-data 0.3.0).
 - **0.1.2** — keyboard focus at 3:1 on every control (WCAG 2.2 · 1.4.11): the kernel Button's
   half-transparent ring (about 1.7:1) gives way to a solid 2px `--ring` outline, light
   `--sidebar-ring` on the navy frame; a bare `<select>` keeps its outline. Reduced motion runs an

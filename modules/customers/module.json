@@ -1,9 +1,9 @@
 {
   "id": "customers",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "kind": "fullstack",
   "title": "Customers",
-  "summary": "A company's customers: code (generated or typed), party type, tax identity as Coretax needs it (NPWP 16, NIK, passport, PKP, VAT collector), billing and shipping addresses with NITKU, contacts, payment days, credit limit, on hold with a reason — deactivated, never deleted. A person's ID masked (an individual's NPWP too) and matched only whole in search; whole only with an access record. Offers CustomerClient (Get, Search, Usable inside a posting's d.Tx, Snapshot for documents).",
+  "summary": "A company's customers: code (generated or typed), party type, tax identity as Coretax needs it (NPWP 16, NIK, passport, PKP, VAT collector), billing and shipping addresses with NITKU, contacts, payment days, credit limit, on hold with a reason — deactivated, never deleted. A person's ID masked (an individual's NPWP too) and matched only whole in search; whole only with an access record. Offers CustomerClient (Get, Search, Usable inside a posting's d.Tx, Snapshot for documents). Publishes its lifecycle as events (customers.customer.created/changed/deactivated/activated/held/released).",
   "when_to_use": [
     "The app sells to known parties: sales orders, invoices, receivables, deliveries, a POS with member customers."
   ],
@@ -49,6 +49,38 @@
     {
       "name": "customers.sensitive",
       "description": "Melihat NIK dan nomor paspor pelanggan secara utuh"
+    }
+  ],
+  "emits": [
+    {
+      "name": "customers.customer.created",
+      "version": 1,
+      "description": "A customer was added: {id, company_id, code, name, party_type}."
+    },
+    {
+      "name": "customers.customer.changed",
+      "version": 1,
+      "description": "A customer or one of its parts changed: {id, company_id, code, name, part} — part is \"customer\" (its own fields: name, tax identity, terms…), \"address\", \"contact\". Read the current state through the contract; the payload carries no tax ID."
+    },
+    {
+      "name": "customers.customer.deactivated",
+      "version": 1,
+      "description": "A customer was deactivated: {id, company_id, code, name}. New documents may not use it; its old ones stay."
+    },
+    {
+      "name": "customers.customer.activated",
+      "version": 1,
+      "description": "A deactivated customer was activated again: {id, company_id, code, name}."
+    },
+    {
+      "name": "customers.customer.held",
+      "version": 1,
+      "description": "A customer was put on hold: {id, company_id, code, name, reason}. Documents refuse it until released."
+    },
+    {
+      "name": "customers.customer.released",
+      "version": 1,
+      "description": "A customer was taken off hold: {id, company_id, code, name}."
     }
   ],
   "scoped": true,

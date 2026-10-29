@@ -2,6 +2,7 @@ package application_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sort"
@@ -282,7 +283,7 @@ func setup(t *testing.T, perms authz) (*application.Service, *memRepo, *kernelte
 	t.Helper()
 	k := kerneltest.Deps(t)
 	repo := newMemRepo()
-	svc := application.NewService(repo, k.Deps.Tx, k.Deps.Audit, perms, signedIn{}, k.Clock)
+	svc := application.NewService(repo, k.Deps.Tx, k.Deps.Events, k.Deps.Audit, perms, signedIn{}, k.Clock)
 	return svc, repo, k, kerneltest.In(context.Background(), 1, 0)
 }
 
@@ -429,7 +430,7 @@ func TestTermsNeedCreditAcrossTheCompany(t *testing.T) {
 		t.Errorf("a new limit from a branch-scoped role: %v", err)
 	}
 
-	full := application.NewService(repo, k.Deps.Tx, k.Deps.Audit, everything(), signedIn{}, k.Clock)
+	full := application.NewService(repo, k.Deps.Tx, k.Deps.Events, k.Deps.Audit, everything(), signedIn{}, k.Clock)
 	if _, err := full.Update(ctx, saved.ID, application.Input{Customer: saved}); err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +476,7 @@ func TestPersonalDataIsMaskedAndRevealIsAudited(t *testing.T) {
 		t.Error("reveal left no access record")
 	}
 
-	noSensitive := application.NewService(repo, k.Deps.Tx, k.Deps.Audit, authz{application.PermManage: all}, signedIn{}, k.Clock)
+	noSensitive := application.NewService(repo, k.Deps.Tx, k.Deps.Events, k.Deps.Audit, authz{application.PermManage: all}, signedIn{}, k.Clock)
 	if _, err := noSensitive.Reveal(ctx, saved.ID); err == nil || status(t, err) != http.StatusForbidden {
 		t.Errorf("reveal without customers.sensitive: %v", err)
 	}
@@ -671,5 +672,170 @@ func TestAChangedNPWPMovesTheDefaultNITKU(t *testing.T) {
 	repo.addresses[hq.ID] = a
 	if _, _, err := svc.Snapshot(ctx, cu.ID, 0); !errors.Is(err, application.ErrInconsistent) {
 		t.Errorf("Snapshot of an inconsistent NITKU = %v", err)
+	}
+}
+
+// --- events ---
+
+// eventNames is every published event as "<verb>" or "<verb>:<part>", in order.
+func eventNames(t *testing.T, k *kerneltest.Kit) []string {
+	t.Helper()
+	var out []string
+	for _, ev := range k.Published() {
+		if ev.Version != 1 || !strings.HasPrefix(ev.Name, "customers.customer.") {
+			t.Fatalf("event %s v%d", ev.Name, ev.Version)
+		}
+		name := strings.TrimPrefix(ev.Name, "customers.customer.")
+		if name == "changed" {
+			var p application.CustomerChanged
+			if err := json.Unmarshal(ev.Payload, &p); err != nil {
+				t.Fatal(err)
+			}
+			name += ":" + p.Part
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
+func decode[T any](t *testing.T, ev kernel.Event) T {
+	t.Helper()
+	var p T
+	if err := json.Unmarshal(ev.Payload, &p); err != nil {
+		t.Fatalf("%s payload: %v", ev.Name, err)
+	}
+	return p
+}
+
+func TestEventsFollowTheLifecycle(t *testing.T) {
+	svc, _, k, ctx := setup(t, everything())
+	p := domain.Customer{Name: "Budi", PartyType: domain.Individual, TaxIDKind: taxid.NIK, TaxID: "3201011508900001"}
+	cu := create(t, svc, ctx, p)
+	pub := k.Published()
+	if len(pub) != 1 || pub[0].Name != "customers.customer.created" || pub[0].Version != 1 {
+		t.Fatalf("after Create, published = %+v", pub)
+	}
+	created := decode[application.CustomerCreated](t, pub[0])
+	if created.ID != cu.ID || created.CompanyID != 1 || created.Code != "PLG-00001" || created.Name != "Budi" || created.PartyType != "individual" {
+		t.Errorf("created payload = %+v", created)
+	}
+	if strings.Contains(string(pub[0].Payload), "3201") {
+		t.Errorf("a person's ID reached an event: %s", pub[0].Payload)
+	}
+
+	cu.Phone = "022 123"
+	if _, err := svc.Update(ctx, cu.ID, application.Input{Customer: cu}); err != nil {
+		t.Fatal(err)
+	}
+	a, err := svc.SaveAddress(ctx, cu.ID, domain.Address{Label: "Rumah", Line: "Jl. A 1", ForBilling: true, IsDefaultBilling: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetAddressActive(ctx, cu.ID, a.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	ct, err := svc.SaveContact(ctx, cu.ID, domain.Contact{Name: "Ani", IsPrimary: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteContact(ctx, cu.ID, ct.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Hold(ctx, cu.ID, "tunggakan 90 hari"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Release(ctx, cu.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetActive(ctx, cu.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetActive(ctx, cu.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	want := "created changed:customer changed:address changed:address changed:contact changed:contact held released deactivated activated"
+	if got := strings.Join(eventNames(t, k), " "); got != want {
+		t.Fatalf("events = %s\nwant     %s", got, want)
+	}
+	pub = k.Published()
+	if held := decode[application.CustomerHeld](t, pub[6]); held.ID != cu.ID || held.Code != "PLG-00001" || held.Reason != "tunggakan 90 hari" {
+		t.Errorf("held payload = %+v", held)
+	}
+	if off := decode[application.CustomerEvent](t, pub[8]); off.ID != cu.ID || off.CompanyID != 1 || off.Name != "Budi" {
+		t.Errorf("deactivated payload = %+v", off)
+	}
+	for _, ev := range pub {
+		if strings.Contains(string(ev.Payload), "3201") {
+			t.Errorf("a person's ID reached %s: %s", ev.Name, ev.Payload)
+		}
+	}
+}
+
+func TestNoEventWithoutAChange(t *testing.T) {
+	svc, _, k, ctx := setup(t, everything())
+	cu := create(t, svc, ctx, company("Toko Tetap"))
+	a, err := svc.SaveAddress(ctx, cu.ID, domain.Address{Label: "Pusat", Line: "Jl. A 1", ForBilling: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Hold(ctx, cu.ID, "tunggakan"); err != nil {
+		t.Fatal(err)
+	}
+	n := len(k.Published())
+	if err := svc.SetActive(ctx, cu.ID, true); err != nil { // already active
+		t.Fatal(err)
+	}
+	if err := svc.Hold(ctx, cu.ID, "tunggakan"); err != nil { // held for that reason already
+		t.Fatal(err)
+	}
+	if err := svc.SetAddressActive(ctx, cu.ID, a.ID, true); err != nil { // already active
+		t.Fatal(err)
+	}
+	if got := len(k.Published()); got != n {
+		t.Fatalf("a change that changed nothing published %d events: %v", got-n, eventNames(t, k)[n:])
+	}
+	if err := svc.Release(ctx, cu.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Release(ctx, cu.ID); err != nil { // not held any more
+		t.Fatal(err)
+	}
+	if got := eventNames(t, k)[n:]; strings.Join(got, " ") != "released" {
+		t.Fatalf("after two releases, published %v", got)
+	}
+}
+
+func TestNoEventOfAFailedTransaction(t *testing.T) {
+	svc, _, k, ctx := setup(t, everything())
+	typed := company("Toko Kode")
+	typed.Code = "T-1"
+	cu := create(t, svc, ctx, typed)
+	n := len(k.Published())
+	// Refused changes: a code in use, a hold without a reason, a customer of another company.
+	if _, err := svc.Create(ctx, application.Input{Customer: typed}); err == nil {
+		t.Fatal("a duplicate code saved")
+	}
+	if err := svc.Hold(ctx, cu.ID, " "); err == nil {
+		t.Fatal("a hold without a reason")
+	}
+	if err := svc.SetActive(kerneltest.In(context.Background(), 2, 0), cu.ID, false); err == nil {
+		t.Fatal("deactivated from another company")
+	}
+	if got := len(k.Published()); got != n {
+		t.Fatalf("refused changes published %d events", got-n)
+	}
+	// The event is published inside the transaction: a caller's rollback takes it with it.
+	err := k.Deps.Tx.Do(ctx, func(ctx context.Context) error {
+		create(t, svc, ctx, company("Toko Batal"))
+		if err := svc.SetActive(ctx, cu.ID, false); err != nil {
+			return err
+		}
+		return errors.New("the caller rolls back")
+	})
+	if err == nil {
+		t.Fatal("the outer transaction did not fail")
+	}
+	if got := len(k.Published()); got != n {
+		t.Fatalf("a rolled-back transaction published %d events", got-n)
 	}
 }

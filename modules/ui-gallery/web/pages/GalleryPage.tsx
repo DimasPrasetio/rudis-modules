@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Download, Pencil, Plus, Printer, Trash2 } from "lucide-react";
+import { Download, Maximize2, Minimize2, Pencil, Plus, Printer, Trash2 } from "lucide-react";
 import { Button } from "@/shared/components/primitives/button";
 import { Checkbox } from "@/shared/components/primitives/checkbox";
 import { Input } from "@/shared/components/primitives/input";
@@ -22,7 +22,7 @@ import { SectionCard } from "@/shared/components/ui/section-card";
 import { CardSkeleton, TableSkeleton } from "@/shared/components/ui/skeletons";
 import { StatusBadge } from "@/shared/components/ui/status-badge";
 import { SummaryCard } from "@/shared/components/ui/summary-card";
-import { DocNumber, Money, Qty } from "@/shared/components/ui/values";
+import { DateTimeValue, DocNumber, Money, Qty } from "@/shared/components/ui/values";
 import { ActionMenu } from "@/shared/components/ui/action-menu";
 import { DataTable } from "@/shared/components/ui/data-table";
 import type { DataTableColumn, DataTableSort } from "@/shared/components/ui/data-table";
@@ -53,6 +53,22 @@ import { ConfirmDialog } from "@/shared/components/ui/confirm-dialog";
 import { ReasonDialog } from "@/shared/components/ui/reason-dialog";
 import { notify } from "@/shared/lib/notify";
 import type { Tone } from "@/shared/lib/tone";
+// 0.14 — ErrorSummary, unsaved-changes guard, date pickers, Banner, undoable toast
+import { Link } from "react-router-dom";
+import { Banner } from "@/shared/components/ui/banner";
+import type { BannerTone } from "@/shared/components/ui/banner";
+import { DatePicker } from "@/shared/components/ui/date-picker";
+import { DateRangePicker } from "@/shared/components/ui/date-range-picker";
+import { ErrorSummary } from "@/shared/components/ui/error-summary";
+import { PeriodPicker } from "@/shared/components/ui/period-picker";
+import { UnsavedChangesGuard } from "@/shared/components/ui/unsaved-changes-guard";
+import { formatDate, formatDateTime, todayISO, zoneAbbrev } from "@/shared/lib/format";
+// 0.15–0.17
+import { useFullscreen } from "@/shared/hooks/use-fullscreen";
+import { useIdleReset } from "@/shared/hooks/use-idle-reset";
+import { setDensity, useDensity } from "@/shared/lib/density";
+import type { Density } from "@/shared/lib/density";
+import { setDisplayTimeZone, useDisplayTimeZone } from "@/shared/lib/timezone";
 
 interface Order {
   id: number;
@@ -102,9 +118,40 @@ function Row({ children }: { children: ReactNode }) {
   return <div className="flex flex-wrap items-center gap-3">{children}</div>;
 }
 
+// 0.15–0.17 — the table's states, a fake total across pages, and one instant for the time zones.
+type TableState = "data" | "loading" | "empty" | "error";
+const TOTAL_ORDERS = 128;
+const INSTANT = "2026-10-16T07:30:00Z";
+const DENSITY_OPTIONS: { value: Density; label: string }[] = [
+  { value: "compact", label: "Rapat" },
+  { value: "default", label: "Normal" },
+  { value: "comfortable", label: "Lega" },
+  { value: "touch", label: "Sentuh" },
+];
+const ZONES = [
+  { value: "Asia/Jakarta", label: "WIB — Asia/Jakarta" },
+  { value: "Asia/Makassar", label: "WITA — Asia/Makassar" },
+  { value: "Asia/Jayapura", label: "WIT — Asia/Jayapura" },
+];
+
 export default function GalleryPage() {
   const [sort, setSort] = useState<DataTableSort>({ key: "date", dir: "desc" });
   const [selected, setSelected] = useState<Set<string | number>>(new Set());
+  // 0.15–0.17
+  const [tableState, setTableState] = useState<TableState>("data");
+  const [allPages, setAllPages] = useState(false);
+  const density = useDensity();
+  const fullscreen = useFullscreen();
+  const [taps, setTaps] = useState(0);
+  const [resets, setResets] = useState(0);
+  useIdleReset(10_000, () => {
+    if (taps > 0) {
+      setTaps(0);
+      setResets((n) => n + 1);
+    }
+  });
+  const [customCrumbs, setCustomCrumbs] = useState(false);
+  const timeZone = useDisplayTimeZone();
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState("");
   const [customer, setCustomer] = useState<SelectValue | null>(null);
@@ -124,10 +171,42 @@ export default function GalleryPage() {
   const [reason, setReason] = useState(false);
   const [idNumber, setIdNumber] = useState("3201234567890001");
   const [address, setAddress] = useState({ ...EMPTY_ADDRESS, line: "Jl. Asia Afrika No. 8", city: "Kota Bandung", province: "Jawa Barat", postal_code: "40111" });
+  // 0.14
+  const [signup, setSignup] = useState({ nama: "", email: "toko@maju", pelanggan: null as SelectValue | null });
+  const [signupErrors, setSignupErrors] = useState<Record<string, string>>({});
+  const [dirty, setDirty] = useState(false);
+  const [birthDate, setBirthDate] = useState("");
+  const [dueDate, setDueDate] = useState(todayISO());
+  const [reportRange, setReportRange] = useState({ from: "", to: "" });
+  const [period, setPeriod] = useState("");
+  const [banners, setBanners] = useState<BannerTone[]>(["info", "warning", "danger", "success"]);
+  const [archived, setArchived] = useState(false);
+
+  const SIGNUP_LABELS = { nama: "Nama pelanggan", email: "Email", pelanggan: "Pelanggan induk" };
+
+  function submitSignup() {
+    const errors: Record<string, string> = {};
+    if (!signup.nama.trim()) errors.nama = "Nama wajib diisi";
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(signup.email)) errors.email = "Email tidak valid";
+    if (signup.pelanggan === null) errors.pelanggan = "Pilih pelanggan induk";
+    setSignupErrors(errors);
+    if (Object.keys(errors).length === 0) notify.success("Formulir terkirim");
+  }
+
+  function archiveOrder() {
+    setArchived(true);
+    notify.undoable("Order SO-2026-00012 diarsipkan", {
+      onUndo: () => {
+        setArchived(false);
+        notify.info("Pengarsipan diurungkan");
+      },
+      onExpire: () => notify.success("Order dihapus dari daftar"),
+    });
+  }
 
   const columns: DataTableColumn<Order>[] = [
-    { header: "Nomor", sortKey: "number", render: (o) => <DocNumber value={o.number} copyable /> },
-    { header: "Tanggal", sortKey: "date", render: (o) => <span className="tabular whitespace-nowrap">{o.date}</span> },
+    { header: "Nomor", sortKey: "number", link: (o) => `/ui-gallery?order=${o.id}`, render: (o) => <DocNumber value={o.number} /> },
+    { header: "Tanggal", sortKey: "date", mobileHidden: true, render: (o) => <span className="tabular whitespace-nowrap">{o.date}</span> },
     { header: "Pelanggan", render: (o) => o.customer },
     { header: "Status", render: (o) => <StatusBadge tone={o.status.tone}>{o.status.label}</StatusBadge> },
     { header: "Total", align: "right", sortKey: "total", render: (o) => <Money value={o.total} /> },
@@ -157,6 +236,7 @@ export default function GalleryPage() {
         title="Galeri UI"
         description="Setiap komponen kit ui-core, ui-data, ui-forms, dan ui-feedback di bawah tema proyek ini."
         meta={<StatusBadge tone="info">Pengembang</StatusBadge>}
+        crumbs={customCrumbs ? [{ label: "Pelanggan", to: "/ui-gallery" }, { label: "Toko Maju Jaya" }] : undefined}
         actions={
           <>
             <ActionMenu items={[{ key: "export", label: "Ekspor", icon: <Download />, onSelect: () => notify.success("Ekspor dimulai") }]} />
@@ -187,15 +267,31 @@ export default function GalleryPage() {
         />
         <DataTable
           columns={columns}
-          rows={ORDERS}
+          rows={tableState === "data" ? ORDERS : []}
           rowKey={(o) => o.id}
+          loading={tableState === "loading"}
+          error={tableState === "error" ? "Server tidak dapat dihubungi (contoh pesan API)." : null}
+          onRetry={() => setTableState("data")}
+          emptyTitle="Belum ada order"
+          emptyDescription="Order yang dibuat akan muncul di sini."
+          emptyAction={
+            <Button size="sm" onClick={() => setTableState("data")}>
+              <Plus /> Buat order pertama
+            </Button>
+          }
           sort={sort}
           onSortChange={setSort}
           selectable
           selectedKeys={selected}
-          onSelectionChange={setSelected}
-          bulkActions={() => (
-            <Button size="sm" variant="outline" onClick={() => notify.success("Label dicetak")}>
+          onSelectionChange={(keys) => {
+            setSelected(keys);
+            setAllPages(false);
+          }}
+          totalCount={TOTAL_ORDERS}
+          allPagesSelected={allPages}
+          onSelectAllPages={() => setAllPages(true)}
+          bulkActions={(keys) => (
+            <Button size="sm" variant="outline" onClick={() => notify.success(allPages ? `Label ${TOTAL_ORDERS} order dicetak` : `Label ${keys.size} order dicetak`)}>
               <Printer /> Cetak label
             </Button>
           )}
@@ -204,8 +300,85 @@ export default function GalleryPage() {
           columnsKey="gallery-orders"
           caption="Contoh daftar order"
         />
-        <Pagination page={page} limit={25} total={128} onPageChange={setPage} onLimitChange={() => undefined} />
+        <Pagination page={page} limit={25} total={TOTAL_ORDERS} onPageChange={setPage} onLimitChange={() => undefined} />
       </section>
+
+      {/* 0.15–0.17 */}
+      <Section title="Tabel: state, pilihan lintas halaman, tata letak HP">
+        <Row>
+          <Segmented
+            aria-label="State tabel"
+            value={tableState}
+            onChange={setTableState}
+            options={[
+              { value: "data", label: "Data" },
+              { value: "loading", label: "Memuat" },
+              { value: "empty", label: "Kosong" },
+              { value: "error", label: "Galat" },
+            ]}
+          />
+          <span className="text-sm text-muted-foreground">Header tabel tetap ada di setiap state. Pilih semua baris di halaman untuk tawaran "Pilih semua {TOTAL_ORDERS} baris"; pilihan dibacakan lewat aria-live.</span>
+        </Row>
+        <p className="text-sm text-muted-foreground">
+          Kolom Nomor adalah tautan sungguhan (⌘/Ctrl-klik membuka tab baru); klik di bagian baris lain tetap membuka panel. Di lebar 375 px setiap baris menjadi kartu — kolom Tanggal disembunyikan di HP (<code className="font-mono">mobileHidden</code>).
+        </p>
+      </Section>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Section title="Density, layar penuh, reset idle">
+          <Row>
+            <Segmented aria-label="Density" value={density} onChange={setDensity} options={DENSITY_OPTIONS} />
+            <span className="text-sm text-muted-foreground">
+              <code className="font-mono">html[data-density="{density}"]</code> — Sentuh: kontrol ≥ 44 px, baris 52 px.
+            </span>
+          </Row>
+          <Row>
+            <Button variant="outline" onClick={fullscreen.toggle} disabled={!fullscreen.supported}>
+              {fullscreen.active ? <Minimize2 /> : <Maximize2 />}
+              {fullscreen.active ? "Keluar layar penuh" : "Layar penuh"}
+            </Button>
+            {!fullscreen.supported && <span className="text-sm text-muted-foreground">Peramban ini tidak mendukung layar penuh.</span>}
+          </Row>
+          <Row>
+            <Button variant="outline" onClick={() => setTaps((n) => n + 1)}>
+              Ketuk ({taps})
+            </Button>
+            <span className="text-sm text-muted-foreground" aria-live="polite">
+              Penghitung kembali ke 0 setelah 10 detik tanpa interaksi (useIdleReset)
+              {resets > 0 && ` — sudah direset ${resets}×`}.
+            </span>
+          </Row>
+        </Section>
+        <Section title="Breadcrumb dan zona waktu tampilan">
+          <Row>
+            <Checkbox id="gallery-crumbs" checked={customCrumbs} onCheckedChange={(v) => setCustomCrumbs(v === true)} />
+            <Label htmlFor="gallery-crumbs">Pakai crumbs halaman: Pelanggan › Toko Maju Jaya</Label>
+          </Row>
+          <p className="text-sm text-muted-foreground">
+            <code className="font-mono">PageHeader crumbs</code> mengganti breadcrumb di header shell; "Pelanggan" menjadi tautan kembali ke daftar. Tanpa crumbs, header memakai grup dan label navigasi.
+          </p>
+          <Row>
+            <Label htmlFor="gallery-tz">Zona waktu tampilan</Label>
+            <div className="w-64">
+              <NativeSelect id="gallery-tz" value={timeZone} onChange={(e) => setDisplayTimeZone(e.target.value)}>
+                {ZONES.map((z) => (
+                  <NativeSelectOption key={z.value} value={z.value}>
+                    {z.label}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </div>
+          </Row>
+          <DescriptionList
+            items={[
+              { label: "Instan dari API", value: <code className="font-mono">{INSTANT}</code> },
+              { label: "formatDateTime", value: `${formatDateTime(INSTANT)} ${zoneAbbrev(timeZone)}` },
+              { label: "DateTimeValue", value: <DateTimeValue value={INSTANT} showZone /> },
+            ]}
+          />
+          <p className="text-sm text-muted-foreground">Modul organisasi memanggil setDisplayTimeZone(me.current.timezone); tanpa itu, WIB.</p>
+        </Section>
+      </div>
 
       <Section title="Tombol">
         <Row>
@@ -425,6 +598,113 @@ export default function GalleryPage() {
           </div>
         </SectionCard>
       </div>
+
+      {/* 0.14 */}
+      <Section title="Ringkasan galat (ErrorSummary)">
+        <p className="text-sm text-muted-foreground">
+          Pola GOV.UK: daftar galat di atas formulir mengambil fokus saat muncul dan setiap baris menaut ke fieldnya (FormField dengan <code>name</code>); pesan di samping kontrol tetap ada.
+        </p>
+        <ErrorSummary errors={signupErrors} labels={SIGNUP_LABELS} />
+        <form
+          noValidate
+          className="flex flex-col gap-5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitSignup();
+          }}
+        >
+          <FieldGrid columns={3}>
+            <FormField label={SIGNUP_LABELS.nama} name="nama" required error={signupErrors.nama}>
+              <Input value={signup.nama} onChange={(e) => setSignup({ ...signup, nama: e.target.value })} autoComplete="organization" />
+            </FormField>
+            <FormField label={SIGNUP_LABELS.email} name="email" required error={signupErrors.email}>
+              <Input type="email" value={signup.email} onChange={(e) => setSignup({ ...signup, email: e.target.value })} autoComplete="email" />
+            </FormField>
+            <FormField label={SIGNUP_LABELS.pelanggan} name="pelanggan" error={signupErrors.pelanggan}>
+              <SearchSelect options={CUSTOMERS} value={signup.pelanggan} onChange={(v) => setSignup({ ...signup, pelanggan: v })} allowClear />
+            </FormField>
+          </FieldGrid>
+          <Row>
+            <Button type="submit">Kirim</Button>
+            <Button type="button" variant="outline" onClick={() => setSignupErrors({})}>
+              Bersihkan galat
+            </Button>
+          </Row>
+        </form>
+      </Section>
+
+      <Section title="Penjaga perubahan belum disimpan">
+        <p className="text-sm text-muted-foreground">
+          Saat formulir kotor, pindah halaman menanyakan dulu (AlertDialog) dan memuat ulang tab memunculkan konfirmasi peramban. Nyalakan sakelar, lalu klik tautan.
+        </p>
+        <Row>
+          <label className="flex items-center gap-2 text-sm">
+            <Switch checked={dirty} onCheckedChange={setDirty} /> Ada perubahan belum disimpan
+          </label>
+          <Button asChild variant="outline">
+            <Link to="/dashboard">Ke dasbor</Link>
+          </Button>
+        </Row>
+        <UnsavedChangesGuard when={dirty} />
+      </Section>
+
+      <Section title="Tanggal dan periode">
+        <FieldGrid columns={3}>
+          <FormField label="Tanggal lahir" name="tanggal_lahir" hint={`Ketik hh/bb/tttt atau buka kalender; nilai ke API: ${birthDate || "kosong"}`}>
+            <DatePicker value={birthDate} onChange={setBirthDate} max={todayISO()} />
+          </FormField>
+          <FormField label="Jatuh tempo" name="jatuh_tempo" hint={`Minimal hari ini; tampil: ${formatDate(dueDate)}`}>
+            <DatePicker value={dueDate} onChange={setDueDate} min={todayISO()} />
+          </FormField>
+          <FormField label="Periode laporan" name="periode" hint={`Nilai ke API: ${period || "kosong"}`}>
+            <PeriodPicker value={period} onChange={setPeriod} min="2024-01" max={todayISO().slice(0, 7)} />
+          </FormField>
+        </FieldGrid>
+        <FormSection title="Rentang tanggal" description="Dua DatePicker dengan rentang cepat; rentang terbalik diberi tahu di field kedua.">
+          <DateRangePicker from={reportRange.from} to={reportRange.to} onChange={setReportRange} fromName="dari" toName="sampai" />
+        </FormSection>
+      </Section>
+
+      <Section title="Banner">
+        <div className="flex flex-col gap-3">
+          {banners.map((tone) => (
+            <Banner
+              key={tone}
+              tone={tone}
+              title={{ info: "Pemeliharaan terjadwal", warning: "Periode Oktober 2026 belum ditutup", danger: "Koneksi ke server terputus", success: "Pembaruan selesai" }[tone]}
+              actions={
+                tone === "warning" ? (
+                  <Button size="sm" variant="outline" onClick={() => notify.info("Membuka tutup buku")}>
+                    Tutup periode
+                  </Button>
+                ) : undefined
+              }
+              onDismiss={() => setBanners((b) => b.filter((t) => t !== tone))}
+            >
+              {{ info: "Sabtu 1 November 2026 pukul 22.00–23.00 WIB aplikasi tidak dapat diakses.", warning: "Transaksi masih bisa diubah sampai periode ditutup.", danger: "Perubahan tidak tersimpan. Periksa jaringan Anda.", success: "Semua data sudah diperbarui ke versi terbaru." }[tone]}
+            </Banner>
+          ))}
+          {banners.length < 4 && (
+            <Button variant="outline" size="sm" className="self-start" onClick={() => setBanners(["info", "warning", "danger", "success"])}>
+              Tampilkan lagi
+            </Button>
+          )}
+        </div>
+      </Section>
+
+      <Section title="Toast dengan Urungkan">
+        <Row>
+          <Button variant="outline" disabled={archived} onClick={archiveOrder}>
+            Arsipkan order
+          </Button>
+          {archived && <span className="text-sm text-muted-foreground">Diarsipkan — urungkan dari toast dalam 8 detik.</span>}
+          {archived && (
+            <Button variant="ghost" size="sm" onClick={() => setArchived(false)}>
+              Reset contoh
+            </Button>
+          )}
+        </Row>
+      </Section>
 
       <Modal
         open={modal}

@@ -84,7 +84,14 @@ per branch, or list the active company's people (`users`, `rbac`, through their 
 (among all, and among given IDs), and every ID.
 
 **Emits** `organization.company.created` v1 — `{company_id, code, name, created_by}`; the creator
-is already placed across the company.
+is already placed across the company. `organization.user.unplaced` v1 —
+`{user_id, company_id, branch_id, unplaced_by}` (`branch_id` 0: across the company), published
+in the transaction that removes the placement, so it exists only if the removal committed. `rbac`
+(≥ 0.7.0) listens and revokes every role the user held in exactly that unit — an unplaced
+person keeps no standing in a place they cannot enter; roles elsewhere stay. **Deactivating a
+company or branch unplaces nobody**: its placements stay (`PlacesOf` still lists them — that is
+how its people stay under their own administrators' authority), nobody can enter, and no event
+is published; reactivating it brings everyone back as they were.
 
 **Web:** a picker in the header (slot `shell:scope`) — "PT Maju › Bandung" — switches the tab
 (other tabs keep theirs) and can make a place the default; a stale stored scope (a deactivated
@@ -100,4 +107,11 @@ pages.
 
 ## Changes
 
+- **0.2.0** — Taking a placement away publishes `organization.user.unplaced` v1
+  (`{user_id, company_id, branch_id, unplaced_by}`) in the same transaction as the removal and
+  its security record; `rbac` ≥ 0.7.0 revokes the roles held in that unit. Deactivating a
+  company or branch still unplaces nobody and publishes nothing (documented). The Penempatan
+  page says so when confirming. The web provider sets ui-core's display time zone
+  (`setDisplayTimeZone`, ui-core ≥ 0.6.0) to the zone of the company or branch the tab works in,
+  so every date and time on every page follows it; signed out, WIB applies again.
 - **0.1.0** — first version.

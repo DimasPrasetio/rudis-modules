@@ -33,7 +33,8 @@
 //               taxid: generated codes, NPWP normalized, duplicate tax IDs confirmed, NIK and
 //               account numbers masked with audited reveal, credit and bank accounts guarded,
 //               a customer on hold or inactive refused by the fixture's posting through its
-//               port, companies kept apart
+//               port, companies kept apart; the master-data events (customers 0.3, users 0.9)
+//               reaching the fixture's subscriber after the commit — none for a refused change
 // Each: install → npm install → go mod tidy → sqlc generate → gofmt → go vet → go test →
 // build:web → build:api → run the binary and call the API.
 //
@@ -85,9 +86,14 @@ function run(cmd, args, cwd, label = `${cmd} ${args.join(" ")}`, env) {
   return true;
 }
 
-function scaffold(name) {
+/** A fresh folder under .testbed/ (made on first use — a scenario run alone must not need it). */
+function tempDir(prefix) {
   mkdirSync(join(LIB, ".testbed"), { recursive: true });
-  const dir = mkdtempSync(join(LIB, ".testbed", `${name}-`));
+  return mkdtempSync(join(LIB, ".testbed", prefix));
+}
+
+function scaffold(name) {
+  const dir = tempDir(`${name}-`);
   if (SKILL) {
     const r = spawnSync(process.execPath, [join(SKILL, "scripts/scaffold.mjs"), "--name", HOST_SCAFFOLD.name, "--backend", HOST_SCAFFOLD.backend, "--dir", dir, "--force"], { encoding: "utf8" });
     if (r.status !== 0) throw new Error(`scaffold failed: ${r.stderr}`);
@@ -312,12 +318,14 @@ async function full() {
   const dir = scaffold("full");
   try {
     applyPreset(LIB, dir, "bingkai-navy");
+    // audit-log before rbac: a module is built in install order, and rbac's bootstrap grant at
+    // start reaches the audit table only once the sink is provided.
     for (const [id, opts] of [
       ["app-shell"], ["files"], ["mailer"], ["users"],
+      ["audit-log", { ports: { UserDirectory: "users" } }],
       ["auth", { ports: { UserStore: "users", PasswordWriter: "users", Mailer: "mailer" } }],
       ["rbac", { ports: { UserDirectory: "users" } }],
       ["settings", { ports: { FileStore: "files" } }],
-      ["audit-log", { ports: { UserDirectory: "users" } }],
       ["ui-gallery"],
     ]) {
       installModule(LIB, dir, id, opts);
@@ -444,6 +452,8 @@ async function full() {
         (await admin.call("GET", `/api/v1/users/${dediId}`)).body.data?.is_active === false);
 
       // rbac: the bootstrap admin holds Administrator (*); a user without roles holds nothing.
+      expect("rbac 0.7: the bootstrap grant of Administrator is a security record, by the system",
+        Number(mysqlQuery(db, "SELECT COUNT(*) FROM audit_log WHERE module = 'rbac' AND action = 'role.member_added' AND kind = 'security' AND company_id = 1 AND summary LIKE '%bootstrap%'", name)) >= 1);
       const perms = await admin.call("GET", "/api/v1/rbac/permissions");
       const names = (perms.body.data ?? []).map((p) => p.name);
       expect("permission catalog = what the modules declared",
@@ -458,6 +468,9 @@ async function full() {
       expect("user without roles: rbac/me → no permissions", (await b.call("GET", "/api/v1/rbac/me")).body.data?.permissions?.length === 0);
       const viewer = await admin.call("POST", "/api/v1/rbac/roles", { name: "Viewer", description: "Read only", permissions: ["users.read"] });
       expect("create role Viewer (users.read) → 201", viewer.status === 201, viewer.body);
+      expect("rbac 0.7: creating a role is a security record (in its transaction)",
+        mysqlQuery(db, "SELECT COUNT(*) FROM audit_log WHERE module = 'rbac' AND action = 'role.created' AND kind = 'security'", name) === "1"
+        && mysqlQuery(db, "SELECT COUNT(*) FROM audit_log WHERE module = 'rbac' AND action = 'role.created' AND kind <> 'security'", name) === "0");
       const bad = await admin.call("POST", "/api/v1/rbac/roles", { name: "Bad", permissions: ["nope.never"] });
       expect("unknown permission → 422", bad.status === 422, bad.body);
       expect("give Budi the Viewer role", (await admin.call("POST", `/api/v1/rbac/roles/${viewer.body.data.id}/members`, { user_id: budiId })).status === 201);
@@ -776,7 +789,7 @@ async function usersAlone() {
 // a calendar job run once across two containers, and the rules that keep modules honest.
 async function kernel6() {
   log("\n=== kernel6: one transaction across modules, events, scope, a Go kit, calendar jobs ===");
-  const lib = mkdtempSync(join(LIB, ".testbed", "lib6-"));
+  const lib = tempDir("lib6-");
   const dir = scaffold("kernel6");
   const g = (...a) => spawnSync("git", ["-C", lib, ...a], { encoding: "utf8" });
   let api;
@@ -913,7 +926,7 @@ async function kernel6() {
 // Runs against a throwaway git copy of the library, so the real repo is never committed to.
 async function lifecycle() {
   log("\n=== lifecycle: module.mjs add / status / upgrade / detach / promote ===");
-  const lib = mkdtempSync(join(LIB, ".testbed", "lib-"));
+  const lib = tempDir("lib-");
   const dir = scaffold("lifecycle");
   const g = (...a) => spawnSync("git", ["-C", lib, ...a], { encoding: "utf8" });
   const cli = (...a) => spawnSync(process.execPath, [join(lib, "scripts/module.mjs"), ...a, "--project", dir], { encoding: "utf8" });
@@ -1139,7 +1152,7 @@ async function lifecycle() {
     writeFileSync(kernelGo, kernelSrc + "\n// a module developer's edit\n");
     r = check();
     expect("an edit to the pinned kernel is refused", r.status === 1 && r.stderr.includes("pinned-kernel") && r.stderr.includes("host/apps/api/internal/kernel/kernel.go"), r.stderr);
-    const hostCopy = mkdtempSync(join(LIB, ".testbed", "host-"));
+    const hostCopy = tempDir("host-");
     let refused = false;
     try { materializeHost(lib, hostCopy); } catch { refused = true; }
     rmSync(hostCopy, { recursive: true, force: true });
@@ -1163,6 +1176,14 @@ async function lifecycle() {
     g("checkout", "--", "modules/users/README.md");
     r = check();
     expect("the same kernel update on its own, with its STATUS.md log line, passes", r.status === 0, r.stderr);
+    g("checkout", "--", "kernel", "STATUS.md");
+    // The sandbox: a late port (users' Placements ← organization, which needs users) is no
+    // cycle; it is wired after its provider, as module.mjs upgrade --port does in a project.
+    const sb = join(lib, ".sandbox", "late");
+    r = spawnSync(process.execPath, [join(lib, "scripts/sandbox.mjs"), "users", "organization", "--dir", sb, "--no-setup"], { cwd: lib, encoding: "utf8" });
+    const sbReg = existsSync(join(sb, "apps/api/internal/modules/registry.go")) ? readFileSync(join(sb, "apps/api/internal/modules/registry.go"), "utf8") : "";
+    expect("sandbox.mjs users organization: the late Placements port is wired after organization, not reported as a cycle",
+      r.status === 0 && sbReg.indexOf("usersModule.UsePlacements(usersPlacements{organization: organizationModule.Client()})") > sbReg.indexOf("organization.New(") && sbReg.includes("rudis:modules:end"), r.stdout + r.stderr);
   } catch (err) {
     fail(`lifecycle: ${err.message}`);
   } finally {
@@ -1199,7 +1220,7 @@ for (const tool of ["go", "sqlc", "gofmt"]) {
 // company and branch against MySQL, with no route or job left reading a scope it has not got.
 async function organization() {
   log("\n=== organization: several companies and branches, added to a running app ===");
-  const lib = mkdtempSync(join(LIB, ".testbed", "liborg-"));
+  const lib = tempDir("liborg-");
   const dir = scaffold("organization");
   const g = (...a) => spawnSync("git", ["-C", lib, ...a], { encoding: "utf8" });
   const cli = (...a) => spawnSync(process.execPath, [join(lib, "scripts/module.mjs"), ...a, "--project", dir], { encoding: "utf8" });
@@ -1237,6 +1258,8 @@ async function organization() {
       && reg.indexOf("usersModule, err := users.New(d)") === before.indexOf("usersModule, err := users.New(d)"), reg);
     expect("rbac hears organization.company.created through the composition root",
       reg.includes('d.Events.On("organization.company.created", "rbac.appoint-founder", rbacModule.OnCompanyCreated)'));
+    expect("…and organization.user.unplaced (rbac 0.7)",
+      reg.includes('d.Events.On("organization.user.unplaced", "rbac.revoke-unplaced", rbacModule.OnUserUnplaced)'));
     r = cli("remove", "organization");
     expect("removing organization is refused while users and rbac are wired to it", r.status === 1 && r.stderr.includes("users"), r.stderr);
     // A module installed after the late lines: they move back after its block.
@@ -1247,7 +1270,7 @@ async function organization() {
     // its own late line must follow it again.
     const rbacManifest = join(lib, "modules/rbac/module.json");
     const rm = JSON.parse(readFileSync(rbacManifest, "utf8"));
-    rm.version = "0.6.1";
+    rm.version = "0.7.1"; // one patch above the library's rbac
     rm.ports.push({ name: "Extra", required: false, description: "testbed: a port a later release adds", adapters: {} });
     rm.register.go.build[0] = "rbacModule, err := rbac.New(d, {{port:UserDirectory}}, {{port:Extra}})";
     writeFileSync(rbacManifest, JSON.stringify(rm, null, 2) + "\n");
@@ -1279,6 +1302,7 @@ async function organization() {
         return c;
       };
       const admin = await signIn("admin@example.com", "admin-pass-123");
+      const adminId = (await admin.call("GET", "/api/v1/auth/me")).body.data.id;
       const at = (scope) => (scope ? { "X-Scope": scope } : {});
 
       let me = await admin.call("GET", "/api/v1/organization/me");
@@ -1298,6 +1322,10 @@ async function organization() {
       }, 15000);
       expect("its creator becomes its Administrator (organization.company.created → rbac)", founder === "ok",
         founder === "ok" ? undefined : mysqlQuery(db, "SELECT CONCAT_WS(' | ', kind, status, attempts, last_error) FROM kernel_tasks ORDER BY id DESC LIMIT 1", name));
+      expect("rbac 0.7: company B gets its own Administrator role, made in the founder's transaction",
+        await waitFor(() => (q(`SELECT COUNT(*) FROM roles WHERE company_id = ${b} AND is_system = 1`) === "1" ? "ok" : undefined), 15000) === "ok"
+        && q(`SELECT COUNT(*) FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.company_id = ${b} AND r.company_id = ${b} AND r.is_system = 1 AND ur.user_id = ${adminId}`) === "1");
+      expect("…recorded as security in company B", q(`SELECT COUNT(*) FROM audit_log WHERE module = 'rbac' AND kind = 'security' AND company_id = ${b} AND action IN ('role.created', 'role.member_added')`) === "2");
       res = await admin.call("POST", "/api/v1/organization/companies", { code: "PT-C", name: "PT C", timezone: "Asia/Jakarta" }, at(String(b)));
       expect("companies are managed only from the home company → 403 from inside B", res.status === 403, res.body);
 
@@ -1369,6 +1397,13 @@ async function organization() {
       const bdg = res.body.data.id;
       res = await admin.call("POST", "/api/v1/rbac/roles", { name: "Kepala cabang", description: "", permissions: ["organization.read", "organization.manage", "users.read", "users.manage"] });
       const head = res.body.data.id;
+      // Roles belong to one company: B neither lists nor reaches company 1's, and may use the name.
+      const rolesB = await admin.call("GET", "/api/v1/rbac/roles", undefined, at(String(b)));
+      expect("rbac 0.7: a role defined in company 1 is not listed from company B", rolesB.status === 200 && !rolesB.body.data.some((r) => r.id === head || r.name === "Kepala cabang"), rolesB.body);
+      expect("…nor reachable there (404)", (await admin.call("GET", `/api/v1/rbac/roles/${head}`, undefined, at(String(b)))).status === 404);
+      res = await admin.call("POST", "/api/v1/rbac/roles", { name: "Kepala cabang", description: "", permissions: ["organization.read"] }, at(String(b)));
+      expect("…and B defines its own role of the same name (201)", res.status === 201 && res.body.data.id !== head, res.body);
+      expect("…which company 1 does not list", !(await admin.call("GET", "/api/v1/rbac/roles")).body.data.some((r) => r.id === res.body.data.id));
       const kepala = (await admin.call("POST", "/api/v1/users", { name: "Kepala BDG", email: "kepala@a.test", password: "kepala-pass-123" }, at(`1:${bdg}`))).body.data.id;
       const staf = (await admin.call("POST", "/api/v1/users", { name: "Staf BDG", email: "staf@a.test", password: "staf-pass-123" }, at(`1:${bdg}`))).body.data.id;
       res = await admin.call("POST", `/api/v1/rbac/roles/${head}/members`, { user_id: kepala, branch_id: bdg });
@@ -1382,6 +1417,17 @@ async function organization() {
       expect("…nor place them in the branch", res.status === 403, res.body);
       res = await kc.call("DELETE", `/api/v1/organization/placements/${staf}?branch=${bdg}`);
       expect("…but takes the branch's own staff out of it", res.status === 200, res.body);
+
+      // A placement taken away takes the roles held there with it (organization.user.unplaced →
+      // rbac): Budi, Administrator of B, is unplaced from B.
+      expect("Budi holds a role in B", q(`SELECT COUNT(*) FROM user_roles WHERE user_id = ${budi} AND company_id = ${b}`) === "1");
+      res = await admin.call("DELETE", `/api/v1/organization/placements/${budi}`, undefined, at(String(b)));
+      expect("Budi unplaced from company B", res.status === 200, res.body);
+      expect("organization 0.2 → rbac 0.7: his roles in B are revoked",
+        await waitFor(() => (q(`SELECT COUNT(*) FROM user_roles WHERE user_id = ${budi} AND company_id = ${b}`) === "0" ? "ok" : undefined), 15000) === "ok",
+        mysqlQuery(db, "SELECT CONCAT_WS(' | ', kind, status, attempts, last_error) FROM kernel_tasks WHERE kind = 'event:rbac.revoke-unplaced' ORDER BY id DESC LIMIT 1", name));
+      expect("…as a security record in B, saying why",
+        q(`SELECT COUNT(*) FROM audit_log WHERE module = 'rbac' AND action = 'role.member_removed' AND kind = 'security' AND company_id = ${b} AND target = 'user:${budi}' AND summary LIKE '%penempatan%'`) === "1");
 
       // Deactivating B: its people cannot work there; Budi still has Jayapura.
       res = await admin.call("POST", `/api/v1/organization/companies/${b}/deactivate`);
@@ -1445,7 +1491,7 @@ async function organization() {
 // module, against MySQL, with two containers posting at once.
 async function documents() {
   log("\n=== documents: money, docstate, numbering, period — the posting recipe end to end ===");
-  const lib = mkdtempSync(join(LIB, ".testbed", "libdoc-"));
+  const lib = tempDir("libdoc-");
   const dir = scaffold("documents");
   const g = (...a) => spawnSync("git", ["-C", lib, ...a], { encoding: "utf8" });
   const cli = (...a) => spawnSync(process.execPath, [join(lib, "scripts/module.mjs"), ...a, "--project", dir], { encoding: "utf8" });
@@ -1710,6 +1756,14 @@ async function documents() {
       const clerkRole = res.body?.data?.id;
       res = await admin.call("POST", "/api/v1/users", { name: "Staf", email: "staf@example.com", password: "staf-pass-1234" });
       expect("a sales clerk, without credit or sensitive rights", res.status === 201 && (await admin.call("POST", `/api/v1/rbac/roles/${clerkRole}/members`, { user_id: res.body.data.id })).status === 201, res.body);
+      // users 0.9: users.user.created reaches the fixture's subscriber through a task once the
+      // account committed — the accountant's and the clerk's (the bootstrap account was created
+      // before the subscriber was wired).
+      const usersNoted = () => q("SELECT COUNT(*) FROM audit_log WHERE module = 'fixinvoice' AND action = 'user.noted'");
+      expect("users 0.9: users.user.created delivered to another module after the commit (Akuntan, Staf)", await waitFor(() => (usersNoted() === "2" ? "ok" : undefined), 15000) === "ok", usersNoted());
+      res = await admin.call("POST", "/api/v1/users", { name: "Staf Lagi", email: "staf@example.com", password: "staf-pass-1234" });
+      expect("…a refused account (422, email in use) left no delivery in the kernel's tasks table",
+        res.status === 422 && q("SELECT COUNT(*) FROM kernel_tasks WHERE kind = 'event:fixinvoice.note-user'") === "2" && usersNoted() === "2", res.body);
       await new Promise((resolve) => setTimeout(resolve, 300));
       const clerk = await signIn(p1, "staf@example.com", "staf-pass-1234");
       const budiShown = (await clerk.call("GET", `${CU}/${budi.id}`)).body?.data;
@@ -1737,6 +1791,12 @@ async function documents() {
         q(`SELECT COUNT(*) FROM fix_invoices WHERE id = ${sale.id} AND number IS NULL`) === "1", res.body);
       expect("released", (await clerk.call("POST", `${CU}/${maju.id}/release`)).status === 200);
       expect("deactivated", (await clerk.call("POST", `${CU}/${maju.id}/deactivate`)).status === 200);
+      // customers 0.3: the deactivation's event reaches the fixture's subscriber — through a task
+      // written in the same transaction, so only after the commit.
+      const customersNoted = () => q("SELECT COUNT(*) FROM audit_log WHERE module = 'fixinvoice' AND action = 'customer.noted'");
+      expect("customers 0.3: customers.customer.deactivated delivered to another module after the commit",
+        await waitFor(() => (customersNoted() === "1" ? "ok" : undefined), 15000) === "ok" &&
+        q("SELECT summary FROM audit_log WHERE module = 'fixinvoice' AND action = 'customer.noted'") === "Pelanggan PLG-00001 dinonaktifkan (event)", customersNoted());
       res = await post(admin, sale.id);
       expect("posting for an inactive customer → 409", res.status === 409 && /nonaktif/.test(res.body.message), res.body);
       res = await admin.call("GET", `${CU}/${maju.id}`);
@@ -1801,6 +1861,9 @@ async function documents() {
       res = await admin.call("GET", `${SU}?q=3201`);
       expect("…is not found by its first digits either", res.status === 200 && res.body.meta.total === 0, res.body);
       expect("company 1's customer is not found from B (404)", (await admin.call("GET", `${CU}/${maju.id}`, undefined, at(String(b)))).status === 404);
+      expect("…nor deactivated from there — and the refused change published nothing (no task, no note)",
+        (await admin.call("POST", `${CU}/${maju.id}/deactivate`, undefined, at(String(b)))).status === 404 &&
+        q("SELECT COUNT(*) FROM kernel_tasks WHERE kind = 'event:fixinvoice.note-deactivated'") === "1" && customersNoted() === "1");
       expect("…nor its supplier", (await admin.call("GET", `${SU}/${sup.id}`, undefined, at(String(b)))).status === 404);
       res = await admin.call("POST", CU, { name: "Toko Maju", party_type: "company", tax_id_kind: "npwp", tax_id: "0013024427092000" }, at(String(b)));
       expect("B keeps its own customers: the NPWP is no duplicate there, its codes start at PLG-00001", res.status === 201 && res.body.data.customer.code === "PLG-00001", res.body);

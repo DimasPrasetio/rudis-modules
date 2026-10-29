@@ -60,8 +60,31 @@ from the user menu through the `user-menu:items` slot; nav entry "Pengguna" in "
 **Not here:** roles and who holds which permission (the `rbac` module), passwords (the auth
 provider), changing one's own email.
 
+## Events
+
+What happens to an account is announced through `d.Events` (kernel 6), inside the transaction
+that makes the change: a subscriber hears of it only once it committed, through a task of its
+own — after the commit, at least once, in no guaranteed order. Declare what you listen to in
+your `module.json` `listens`; the installer wires it in the composition root. Decode the payload
+into a struct of your own — never import this module. Payloads hold the account's plain fields:
+never a password or its hash, and a password change alone is no event.
+
+| Event (v1) | Payload | When |
+|---|---|---|
+| `users.user.created` | `{id, name, email, is_active}` | An account was created — by an administrator, or the bootstrap account at a fresh install |
+| `users.user.changed` | `{id, name, email, changed}` | Its name or email changed — by an administrator (`PUT /users/{id}`) or the person (own profile); `changed` lists `"name"` and/or `"email"`. Not for a new password alone |
+| `users.user.deactivated` | `{id, name, email}` | Deactivated — it can no longer sign in. Only when it was active |
+| `users.user.activated` | `{id, name, email}` | Activated again. Only when it was inactive |
+
+A refused change (validation, an email in use, a protected account, another company's person)
+publishes nothing. An update that renames and deactivates at once publishes both events.
+
 ## Changes
 
+- **0.9.0** — lifecycle events: `users.user.created`, `.changed` (name or email; never a
+  password), `.deactivated`, `.activated`, published inside the transaction that makes the change
+  (see Events); own-profile changes now run in one transaction with their audit record and
+  event. `application.NewService` takes the kernel's `d.Events`.
 - **0.8.0** — `PUT /users/{id}` on one's own account refuses a new email or password (403; the
   page shows them read-only there) — use the auth provider's change-password. Updates are one
   locked transaction with their audit record (no lost update between two administrators); search

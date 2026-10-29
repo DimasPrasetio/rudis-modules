@@ -25,13 +25,58 @@ a quiet header on `--background` and rows padded by `--row-py`.
 | `EmptyState` · `ErrorState` · `NotFoundState` | Empty (with next action), failed load ("Coba lagi"), 404 |
 | `TableSkeleton` · `CardSkeleton` · `DetailSkeleton` | Loading shaped like the result |
 | `DescriptionList` | Label–value grid, "–" for empty |
-| `Money` · `Qty` · `DocNumber` | Rupiah (accounting mode), quantities, copyable codes |
+| `Money` · `Qty` · `DocNumber` · `DateTimeValue` | Rupiah (accounting mode), quantities, copyable codes, an instant in the display zone with "WIB" as its title |
 | `Modal` · `FormSheet` | Dialog for ≤ 6 fields; right panel for master data and record actions |
 
 **Lib:** `shared/lib/format.ts` (`formatIDR`, `formatNumber`, `formatDate`, `formatDateTime`,
-`todayISO`), `shared/lib/tone.ts` (`Tone`).
+`formatTime`, `zoneAbbrev`, `todayISO`), `shared/lib/timezone.ts`, `shared/lib/breadcrumbs.ts`,
+`shared/lib/density.ts`, `shared/lib/focus.ts`, `shared/lib/tone.ts` (`Tone`).
+
+**Hooks:** `useResource` (loads what a page shows), `useFullscreen`, `useIdleReset`.
+
+### Dates follow the company's time zone
+
+The API sends instants as RFC 3339 with an offset (`2026-10-16T07:30:00Z`). `formatDateTime`,
+`formatTime`, `DateTimeValue`, and `formatDate` of an instant show them in the **display time
+zone** (`shared/lib/timezone.ts`), never in the browser's: a branch in Makassar reads 15:30 WITA
+whatever laptop it uses. Calendar dates (`"2026-10-16"`, a due date) are shown as written.
+`todayISO()` is today in that zone.
+
+The contract: **a module that knows the company's or branch's zone sets it; without one, WIB.**
+An organization module calls `setDisplayTimeZone(me.current.timezone)` from its provider when
+`/me` arrives and when the scope changes; a single-company app may call it once from its
+settings. `useDisplayTimeZone()` re-renders a component when it changes; `zoneAbbrev()` gives
+"WIB" / "WITA" / "WIT" for the Indonesian zones and the IANA name otherwise. The zone is kept
+in memory and `sessionStorage` (guarded), so a reload keeps it per tab.
+
+### Breadcrumbs that go back to the list
+
+`PageHeader crumbs={[{ label: "Pelanggan", to: "/customers" }, { label: customer.name }]}` sets
+the shell's breadcrumb while the page is mounted (`shared/lib/breadcrumbs.ts`:
+`setBreadcrumbs`, `clearBreadcrumbs`, `useBreadcrumbs`); every crumb with `to` is a link, the
+last is the current page. On leave it is cleared, so a page without `crumbs` gets the
+navigation-derived trail the shell draws by itself. `useCrumbs(crumbs)` does the same for a
+page without a `PageHeader`.
+
+### Density, full screen, idle reset (touch and kiosk screens)
+
+`shared/lib/density.ts`: `Density = "compact" | "default" | "comfortable" | "touch"`,
+`getDensity`, `setDensity` (writes `<html data-density>`, remembered in `localStorage` and
+applied again at import), `useDensity`. The preset turns it into row padding and, under
+`touch`, 44px controls (`--control-h`), larger text, and no hover-only affordances — for POS,
+attendance, visitor-book, queue, and kitchen screens. `useFullscreen()` →
+`{ active, supported, enter, exit, toggle }` on the document (call `enter` from a click);
+`useIdleReset(ms, onIdle, { events, enabled })` runs `onIdle` after `ms` without pointer, key,
+or touch activity and cleans up on unmount — a kiosk returns to its start screen.
 
 ## Changes
+
+- **0.6.0** — dates in the company's zone: `formatDateTime`, `formatTime`, `DateTimeValue`,
+  `todayISO`, and `formatDate` of an instant follow the display time zone
+  (`shared/lib/timezone.ts`: `getDisplayTimeZone`, `setDisplayTimeZone`, `useDisplayTimeZone`,
+  default WIB); `zoneAbbrev`. `PageHeader crumbs` sets the shell's breadcrumb so a detail page
+  leads back to its list (`shared/lib/breadcrumbs.ts`). Density `shared/lib/density.ts` with a
+  new `touch` level, `useFullscreen`, and `useIdleReset` for kiosk screens.
 
 - **0.5.0** — keyboard focus visible at 3:1 everywhere (WCAG 2.2 · 1.4.11, 2.4.7): checkbox,
   radio, switch, tabs, toggle, scroll area, and dropdown items draw a solid 2px outline in

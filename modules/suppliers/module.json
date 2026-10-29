@@ -1,9 +1,9 @@
 {
   "id": "suppliers",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "kind": "fullstack",
   "title": "Suppliers",
-  "summary": "A company's suppliers: code (generated or typed), party type, tax identity as Coretax needs it (NPWP 16, NIK, passport, PKP), addresses with NITKU, bank accounts (changed only with suppliers.sensitive, every change a security record, a warning when the holder is someone else), contacts, payment days, on hold with a reason — deactivated, never deleted. A person's ID (an individual's NPWP too) and account numbers masked, whole only with an access record. Offers SupplierClient (Get, Search, Usable inside a posting's d.Tx, Snapshot, DefaultBankAccount).",
+  "summary": "A company's suppliers: code (generated or typed), party type, tax identity as Coretax needs it (NPWP 16, NIK, passport, PKP), addresses with NITKU, bank accounts (changed only with suppliers.sensitive, every change a security record, a warning when the holder is someone else), contacts, payment days, on hold with a reason — deactivated, never deleted. A person's ID (an individual's NPWP too) and account numbers masked, whole only with an access record. Offers SupplierClient (Get, Search, Usable inside a posting's d.Tx, Snapshot, DefaultBankAccount). Publishes its lifecycle as events (suppliers.supplier.created/changed/deactivated/activated/held/released).",
   "when_to_use": [
     "The app buys from known parties: purchase orders, bills, payables, payments, goods receipts."
   ],
@@ -44,6 +44,38 @@
     {
       "name": "suppliers.sensitive",
       "description": "Melihat NIK, paspor, dan rekening pemasok secara utuh, dan mengubah rekening"
+    }
+  ],
+  "emits": [
+    {
+      "name": "suppliers.supplier.created",
+      "version": 1,
+      "description": "A supplier was added: {id, company_id, code, name, party_type}."
+    },
+    {
+      "name": "suppliers.supplier.changed",
+      "version": 1,
+      "description": "A supplier or one of its parts changed: {id, company_id, code, name, part} — part is \"supplier\" (its own fields: name, tax identity, terms…), \"address\", \"contact\", or \"bank_account\" (never the number). Read the current state through the contract; the payload carries no tax ID."
+    },
+    {
+      "name": "suppliers.supplier.deactivated",
+      "version": 1,
+      "description": "A supplier was deactivated: {id, company_id, code, name}. New documents may not use it; its old ones stay."
+    },
+    {
+      "name": "suppliers.supplier.activated",
+      "version": 1,
+      "description": "A deactivated supplier was activated again: {id, company_id, code, name}."
+    },
+    {
+      "name": "suppliers.supplier.held",
+      "version": 1,
+      "description": "A supplier was put on hold: {id, company_id, code, name, reason}. Documents refuse it until released."
+    },
+    {
+      "name": "suppliers.supplier.released",
+      "version": 1,
+      "description": "A supplier was taken off hold: {id, company_id, code, name}."
     }
   ],
   "scoped": true,

@@ -3,10 +3,10 @@
   "modules": [
     {
       "id": "app-shell",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "kind": "web",
       "title": "App shell",
-      "summary": "The frame around protected pages: collapsible sidebar built from every module's nav, inset canvas, breadcrumb header, and slots for a user menu.",
+      "summary": "The frame around protected pages: collapsible sidebar built from every module's nav, inset canvas, breadcrumb header (a page's own crumbs lead back to its list), and slots for a user menu.",
       "when_to_use": [
         "Back-office and admin apps with several sections reached from a sidebar."
       ],
@@ -154,10 +154,10 @@
     },
     {
       "id": "customers",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "kind": "fullstack",
       "title": "Customers",
-      "summary": "A company's customers: code (generated or typed), party type, tax identity as Coretax needs it (NPWP 16, NIK, passport, PKP, VAT collector), billing and shipping addresses with NITKU, contacts, payment days, credit limit, on hold with a reason — deactivated, never deleted. A person's ID masked (an individual's NPWP too) and matched only whole in search; whole only with an access record. Offers CustomerClient (Get, Search, Usable inside a posting's d.Tx, Snapshot for documents).",
+      "summary": "A company's customers: code (generated or typed), party type, tax identity as Coretax needs it (NPWP 16, NIK, passport, PKP, VAT collector), billing and shipping addresses with NITKU, contacts, payment days, credit limit, on hold with a reason — deactivated, never deleted. A person's ID masked (an individual's NPWP too) and matched only whole in search; whole only with an access record. Offers CustomerClient (Get, Search, Usable inside a posting's d.Tx, Snapshot for documents). Publishes its lifecycle as events (customers.customer.created/changed/deactivated/activated/held/released).",
       "when_to_use": [
         "The app sells to known parties: sales orders, invoices, receivables, deliveries, a POS with member customers."
       ],
@@ -200,7 +200,38 @@
         "cust_settings"
       ],
       "scoped": true,
-      "emits": [],
+      "emits": [
+        {
+          "name": "customers.customer.created",
+          "version": 1,
+          "description": "A customer was added: {id, company_id, code, name, party_type}."
+        },
+        {
+          "name": "customers.customer.changed",
+          "version": 1,
+          "description": "A customer or one of its parts changed: {id, company_id, code, name, part} — part is \"customer\" (its own fields: name, tax identity, terms…), \"address\", \"contact\". Read the current state through the contract; the payload carries no tax ID."
+        },
+        {
+          "name": "customers.customer.deactivated",
+          "version": 1,
+          "description": "A customer was deactivated: {id, company_id, code, name}. New documents may not use it; its old ones stay."
+        },
+        {
+          "name": "customers.customer.activated",
+          "version": 1,
+          "description": "A deactivated customer was activated again: {id, company_id, code, name}."
+        },
+        {
+          "name": "customers.customer.held",
+          "version": 1,
+          "description": "A customer was put on hold: {id, company_id, code, name, reason}. Documents refuse it until released."
+        },
+        {
+          "name": "customers.customer.released",
+          "version": 1,
+          "description": "A customer was taken off hold: {id, company_id, code, name}."
+        }
+      ],
       "listens": []
     },
     {
@@ -405,7 +436,7 @@
     },
     {
       "id": "organization",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "kind": "fullstack",
       "title": "Organization (companies, branches, placements)",
       "summary": "Several companies and their branches in one app: who is placed where, a company/branch picker in the header, and the kernel's scope resolver (d.Scope) — every request works in one company and, optionally, one branch, in its time zone. Offers OrganizationClient.",
@@ -462,6 +493,11 @@
           "name": "organization.company.created",
           "version": 1,
           "description": "A company was created: {company_id, code, name, created_by}. Its creator is already placed across it."
+        },
+        {
+          "name": "organization.user.unplaced",
+          "version": 1,
+          "description": "A placement was taken away: {user_id, company_id, branch_id, unplaced_by} (branch_id 0: across the company). Published in the transaction that removes it; rbac revokes the roles held in that unit. Deactivating a company or branch unplaces nobody and publishes nothing."
         }
       ],
       "listens": []
@@ -511,10 +547,10 @@
     },
     {
       "id": "rbac",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "kind": "fullstack",
       "title": "Roles and permissions (RBAC)",
-      "summary": "Who may do what: roles hold permissions that modules declare, users hold roles per company — across it or in one branch. Fills the kernel's d.Authz (and Units for branches); Roles page with a per-module permission editor and members; Administrator role with every permission.",
+      "summary": "Who may do what: each company defines its own roles holding permissions that modules declare; users hold them across the company or in one branch. Fills the kernel's d.Authz (and Units for branches); Roles page with a per-module permission editor and members; an Administrator role with every permission per company; offers RoleHolders (who holds role X) for approvals.",
       "when_to_use": [
         "Different people need different access: admins, staff, read-only viewers.",
         "Any app with more than one kind of user, once auth is in."
@@ -528,7 +564,9 @@
       ],
       "requires_kernel": 6,
       "provides": {
-        "contracts": [],
+        "contracts": [
+          "RoleHolders"
+        ],
         "kernel": [
           "authz"
         ]
@@ -566,10 +604,11 @@
         "role_permissions",
         "user_roles"
       ],
-      "scoped": false,
+      "scoped": true,
       "emits": [],
       "listens": [
-        "organization.company.created"
+        "organization.company.created",
+        "organization.user.unplaced"
       ]
     },
     {
@@ -623,10 +662,10 @@
     },
     {
       "id": "suppliers",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "kind": "fullstack",
       "title": "Suppliers",
-      "summary": "A company's suppliers: code (generated or typed), party type, tax identity as Coretax needs it (NPWP 16, NIK, passport, PKP), addresses with NITKU, bank accounts (changed only with suppliers.sensitive, every change a security record, a warning when the holder is someone else), contacts, payment days, on hold with a reason — deactivated, never deleted. A person's ID (an individual's NPWP too) and account numbers masked, whole only with an access record. Offers SupplierClient (Get, Search, Usable inside a posting's d.Tx, Snapshot, DefaultBankAccount).",
+      "summary": "A company's suppliers: code (generated or typed), party type, tax identity as Coretax needs it (NPWP 16, NIK, passport, PKP), addresses with NITKU, bank accounts (changed only with suppliers.sensitive, every change a security record, a warning when the holder is someone else), contacts, payment days, on hold with a reason — deactivated, never deleted. A person's ID (an individual's NPWP too) and account numbers masked, whole only with an access record. Offers SupplierClient (Get, Search, Usable inside a posting's d.Tx, Snapshot, DefaultBankAccount). Publishes its lifecycle as events (suppliers.supplier.created/changed/deactivated/activated/held/released).",
       "when_to_use": [
         "The app buys from known parties: purchase orders, bills, payables, payments, goods receipts."
       ],
@@ -668,7 +707,38 @@
         "supp_settings"
       ],
       "scoped": true,
-      "emits": [],
+      "emits": [
+        {
+          "name": "suppliers.supplier.created",
+          "version": 1,
+          "description": "A supplier was added: {id, company_id, code, name, party_type}."
+        },
+        {
+          "name": "suppliers.supplier.changed",
+          "version": 1,
+          "description": "A supplier or one of its parts changed: {id, company_id, code, name, part} — part is \"supplier\" (its own fields: name, tax identity, terms…), \"address\", \"contact\", or \"bank_account\" (never the number). Read the current state through the contract; the payload carries no tax ID."
+        },
+        {
+          "name": "suppliers.supplier.deactivated",
+          "version": 1,
+          "description": "A supplier was deactivated: {id, company_id, code, name}. New documents may not use it; its old ones stay."
+        },
+        {
+          "name": "suppliers.supplier.activated",
+          "version": 1,
+          "description": "A deactivated supplier was activated again: {id, company_id, code, name}."
+        },
+        {
+          "name": "suppliers.supplier.held",
+          "version": 1,
+          "description": "A supplier was put on hold: {id, company_id, code, name, reason}. Documents refuse it until released."
+        },
+        {
+          "name": "suppliers.supplier.released",
+          "version": 1,
+          "description": "A supplier was taken off hold: {id, company_id, code, name}."
+        }
+      ],
       "listens": []
     },
     {
@@ -700,10 +770,10 @@
     },
     {
       "id": "ui-core",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "kind": "ui",
       "title": "UI core kit",
-      "summary": "Bingkai Navy foundation every screen uses: the restyled shadcn primitives, page layout (Page, PageHeader, SectionCard, SummaryCard), StatusBadge with fixed tones, Notice, empty/error/404 states, skeletons, DescriptionList, Money/Qty/DocNumber, Modal, FormSheet, and id-ID formatters.",
+      "summary": "Bingkai Navy foundation every screen uses: the restyled shadcn primitives, page layout (Page, PageHeader with crumbs, SectionCard, SummaryCard), StatusBadge with fixed tones, Notice, empty/error/404 states, skeletons, DescriptionList, Money/Qty/DocNumber/DateTimeValue, Modal, FormSheet, id-ID formatters in the company's time zone, density, full screen, and idle reset.",
       "when_to_use": [
         "Any project with screens — every other kit and every module with a frontend builds on it."
       ],
@@ -727,10 +797,10 @@
     },
     {
       "id": "ui-data",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "kind": "ui",
       "title": "UI data kit",
-      "summary": "Lists and tables: DataTable (sort, selection with a bulk-action bar, column chooser, built-in loading/empty/error), Pagination, Toolbar with filter chips, FilterBar, SearchInput (debounced), ActionMenu (⋯), NavTabs.",
+      "summary": "Lists and tables: DataTable (row identity as a real link, sort, selection with a bulk-action bar also across pages, column chooser, loading/empty/error states that keep the header, card layout on phones), Pagination, Toolbar with filter chips, FilterBar, SearchInput (debounced), ActionMenu (⋯), NavTabs.",
       "when_to_use": [
         "Any screen that lists records."
       ],
@@ -756,10 +826,10 @@
     },
     {
       "id": "ui-feedback",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "kind": "ui",
       "title": "UI feedback kit",
-      "summary": "Telling people what happened: toasts (notify), ConfirmDialog, ReasonDialog, a global loading bar for running requests, and an error boundary with a crash card — mounted once through its provider.",
+      "summary": "Telling people what happened: toasts (notify, with an undoable one), Banner, ConfirmDialog, ReasonDialog, a global loading bar for running requests, and an error boundary with a crash card — mounted once through its provider.",
       "when_to_use": [
         "Every app with a frontend: confirmations, toasts, and a crash screen instead of a blank page."
       ],
@@ -786,10 +856,10 @@
     },
     {
       "id": "ui-forms",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "kind": "ui",
       "title": "UI forms kit",
-      "summary": "Forms: FormField, PasswordInput, DigitsInput, MoneyInput, AddressFields, SearchSelect, AsyncSearchSelect (server search, paging), HierarchicalSelect (tree), Segmented, MultiToggle, DateRangeFields, KeyValueEditor, FieldHint, FormSection/FieldGrid/StickyFooter/ActionRow, LineItemsEditor, FileDropzone, Stepper.",
+      "summary": "Forms: FormField (name → field-<name>), ErrorSummary, UnsavedChangesGuard, PasswordInput, DigitsInput, MoneyInput, AddressFields, SearchSelect, AsyncSearchSelect (server search, paging), HierarchicalSelect (tree), Segmented, MultiToggle, DatePicker (dd/mm/yyyy + calendar), DateRangePicker (presets), PeriodPicker (month), DateRangeFields, KeyValueEditor, FieldHint, FormSection/FieldGrid/StickyFooter/ActionRow, LineItemsEditor, FileDropzone, Stepper.",
       "when_to_use": [
         "Any screen where people enter or edit data."
       ],
@@ -815,7 +885,7 @@
     },
     {
       "id": "ui-gallery",
-      "version": "0.1.2",
+      "version": "0.2.0",
       "kind": "web",
       "title": "UI gallery",
       "summary": "A development page (/ui-gallery) showing every component of the four UI kits in all its variants — to check a preset, compare designs, and pick components.",
@@ -847,10 +917,10 @@
     },
     {
       "id": "users",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "kind": "fullstack",
       "title": "Users",
-      "summary": "The people who can sign in: list, search, add, edit, deactivate; each person's own profile page; first-user bootstrap from env. Offers UserClient (incl. SetPassword for an auth provider, IDs); every change audited; guarded by users.read / users.manage. With an organization module, its pages show the active company's people.",
+      "summary": "The people who can sign in: list, search, add, edit, deactivate; each person's own profile page; first-user bootstrap from env. Offers UserClient (incl. SetPassword for an auth provider, IDs); every change audited; guarded by users.read / users.manage. With an organization module, its pages show the active company's people. Publishes accounts' lifecycle as events (users.user.created/changed/deactivated/activated).",
       "when_to_use": [
         "Any app where people sign in with an account the app itself stores."
       ],
@@ -892,22 +962,44 @@
         "users"
       ],
       "scoped": false,
-      "emits": [],
+      "emits": [
+        {
+          "name": "users.user.created",
+          "version": 1,
+          "description": "An account was created (the bootstrap account too): {id, name, email, is_active}."
+        },
+        {
+          "name": "users.user.changed",
+          "version": 1,
+          "description": "An account's name or email changed — by an administrator or the person (own profile): {id, name, email, changed} — changed lists \"name\" and/or \"email\". A password change alone publishes nothing."
+        },
+        {
+          "name": "users.user.deactivated",
+          "version": 1,
+          "description": "An account was deactivated — it can no longer sign in: {id, name, email}."
+        },
+        {
+          "name": "users.user.activated",
+          "version": 1,
+          "description": "A deactivated account was activated again: {id, name, email}."
+        }
+      ],
       "listens": []
     }
   ],
   "presets": [
     {
       "id": "bingkai-navy",
-      "version": "0.1.2",
+      "version": "0.2.0",
       "title": "Bingkai Navy",
-      "summary": "Dense back-office look: dark-navy frame around a light canvas, navy brand, Inter + Plus Jakarta Sans + Geist Mono, 14px base.",
+      "summary": "Dense back-office look: dark-navy frame around a light canvas, navy brand, Inter + Plus Jakarta Sans + Geist Mono, 14px base; a touch density (44px controls) for POS and kiosk screens of the same app.",
       "when_to_use": [
         "Back-office and admin apps used for hours a day on desktop: ERP, inventory, finance, HR, internal tools.",
-        "Data-dense screens: tables, documents, forms with many fields."
+        "Data-dense screens: tables, documents, forms with many fields.",
+        "Touch-first screens of such an app — POS on a tablet, attendance or visitor kiosk, queue display, kitchen screen — with the touch density (ui-core setDensity(\"touch\")), not a separate preset."
       ],
       "when_not_to_use": [
-        "Public or marketing pages, consumer apps, and touch-first screens (POS on a tablet): research their own direction."
+        "Public or marketing pages and consumer apps: research their own direction."
       ]
     }
   ]

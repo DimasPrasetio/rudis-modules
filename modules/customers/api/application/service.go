@@ -117,6 +117,11 @@ type Transactor interface {
 	Do(ctx context.Context, fn func(ctx context.Context) error, opts ...kernel.TxOption) error
 }
 
+// Publisher announces events — the kernel's d.Events.
+type Publisher interface {
+	Publish(ctx context.Context, name string, version int, payload any) error
+}
+
 // Auditor records changes — the kernel's d.Audit.
 type Auditor interface {
 	Record(ctx context.Context, e kernel.AuditEntry)
@@ -134,16 +139,57 @@ type Identity interface {
 
 // Service is the customers module's use cases.
 type Service struct {
-	repo  Repository
-	tx    Transactor
-	audit Auditor
-	authz Authorizer
-	auth  Identity
-	clock kernel.Clock
+	repo   Repository
+	tx     Transactor
+	events Publisher
+	audit  Auditor
+	authz  Authorizer
+	auth   Identity
+	clock  kernel.Clock
 }
 
-func NewService(repo Repository, tx Transactor, audit Auditor, authz Authorizer, auth Identity, clock kernel.Clock) *Service {
-	return &Service{repo: repo, tx: tx, audit: audit, authz: authz, auth: auth, clock: clock}
+func NewService(repo Repository, tx Transactor, events Publisher, audit Auditor, authz Authorizer, auth Identity, clock kernel.Clock) *Service {
+	return &Service{repo: repo, tx: tx, events: events, audit: audit, authz: authz, auth: auth, clock: clock}
+}
+
+// Event payloads — what a subscriber receives (README › Events). Primitive IDs and plain
+// fields only: never a tax ID. Published inside the transaction that makes the change, so an
+// event exists only if the change committed.
+
+// CustomerEvent is the payload of customers.customer.deactivated, .activated, and .released.
+type CustomerEvent struct {
+	ID        int64  `json:"id"`
+	CompanyID int64  `json:"company_id"`
+	Code      string `json:"code"`
+	Name      string `json:"name"`
+}
+
+// CustomerCreated is the payload of customers.customer.created.
+type CustomerCreated struct {
+	CustomerEvent
+	PartyType string `json:"party_type"`
+}
+
+// CustomerChanged is the payload of customers.customer.changed: Part names what changed —
+// "customer" (its own fields), "address", or "contact".
+type CustomerChanged struct {
+	CustomerEvent
+	Part string `json:"part"`
+}
+
+// CustomerHeld is the payload of customers.customer.held.
+type CustomerHeld struct {
+	CustomerEvent
+	Reason string `json:"reason"`
+}
+
+func eventOf(c domain.Customer) CustomerEvent {
+	return CustomerEvent{ID: c.ID, CompanyID: c.CompanyID, Code: c.Code, Name: c.Name}
+}
+
+// changed announces that part of the customer changed, inside the caller's transaction.
+func (s *Service) changed(ctx context.Context, c domain.Customer, part string) error {
+	return s.events.Publish(ctx, "customers.customer.changed", 1, CustomerChanged{CustomerEvent: eventOf(c), Part: part})
 }
 
 func company(ctx context.Context) int64 { return kernel.ScopeFrom(ctx).CompanyID }
@@ -310,7 +356,7 @@ func (s *Service) Create(ctx context.Context, in Input) (Saved, error) {
 		c.ID = id
 		s.audit.Record(ctx, kernel.AuditEntry{Module: "customers", Action: "customer.created", Target: target(id),
 			Summary: "Menambah pelanggan " + c.Code + " " + c.Name, Data: map[string]any{"code": c.Code, "name": c.Name, "terms": termsData(c)}})
-		return nil
+		return s.events.Publish(ctx, "customers.customer.created", 1, CustomerCreated{CustomerEvent: eventOf(c), PartyType: string(c.PartyType)})
 	})
 	if err != nil {
 		return Saved{}, err
@@ -411,7 +457,7 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (Saved, error)
 				Summary: "Mengubah termin dan batas kredit pelanggan " + c.Code, Data: map[string]any{"before": termsData(before), "after": termsData(c)}})
 		}
 		saved = Saved{Customer: Masked(c), Warnings: warnings}
-		return nil
+		return s.changed(ctx, c, "customer")
 	})
 	return saved, err
 }
@@ -472,7 +518,10 @@ func (s *Service) SetActive(ctx context.Context, id int64, active bool) error {
 			action, summary = "customer.activated", "Mengaktifkan pelanggan "
 		}
 		s.audit.Record(ctx, kernel.AuditEntry{Module: "customers", Action: action, Target: target(id), Summary: summary + c.Code + " " + c.Name})
-		return nil
+		if active {
+			return s.events.Publish(ctx, "customers.customer.activated", 1, eventOf(c))
+		}
+		return s.events.Publish(ctx, "customers.customer.deactivated", 1, eventOf(c))
 	})
 }
 
@@ -507,7 +556,10 @@ func (s *Service) setHold(ctx context.Context, id int64, hold bool, reason strin
 			action, summary = "customer.released", "Melepas tahanan pelanggan "+c.Code
 		}
 		s.audit.Record(ctx, kernel.AuditEntry{Module: "customers", Action: action, Target: target(id), Summary: summary, Data: map[string]any{"reason": reason}})
-		return nil
+		if hold {
+			return s.events.Publish(ctx, "customers.customer.held", 1, CustomerHeld{CustomerEvent: eventOf(c), Reason: reason})
+		}
+		return s.events.Publish(ctx, "customers.customer.released", 1, eventOf(c))
 	})
 }
 

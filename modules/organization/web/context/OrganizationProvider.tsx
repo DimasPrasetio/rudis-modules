@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import axios from "axios";
 import { onAppEvent } from "@/shared/app-events";
 import { getScope, setScope } from "@/shared/scope";
+import { setDisplayTimeZone } from "@/shared/lib/timezone";
 import { Spinner } from "@/shared/components/primitives/spinner";
 import { fetchMe } from "@/modules/organization/services/organization.service";
 import type { Me } from "@/modules/organization/types/organization";
@@ -36,6 +37,9 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     fetchMe()
       .then((m) => {
         if (id !== request.current) return;
+        // Dates on every page follow the company or branch this tab works in (ui-core's display
+        // time zone); signed out, the kit's default (WIB) applies again.
+        setDisplayTimeZone(m.current.timezone);
         setMe(m);
         setChecked(true);
       })
@@ -47,6 +51,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
           return;
         }
         // Signed out, placed nowhere (the sign-in guard says so), or the API is down.
+        setDisplayTimeZone(null);
         setMe(null);
         setChecked(true);
       });
