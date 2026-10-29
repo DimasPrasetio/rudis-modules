@@ -1,18 +1,18 @@
 {
-  "kernel": 6,
+  "kernel": 7,
   "source": {
     "repository": "https://github.com/DimasPrasetio/rudis-monorepo.git",
     "path": ".",
-    "ref": "rudis-monorepo/kernel/v6.0",
-    "tag": "rudis-monorepo/kernel/v6.0",
-    "commit": "eeef47e42ae1aad756e3e0d4c753a1dffde3f19d"
+    "ref": "rudis-monorepo/kernel/v7.0",
+    "tag": "rudis-monorepo/kernel/v7.0",
+    "commit": "f6f4e123dd21a541ac9340c9813f963dac6993b5"
   },
   "scaffold": {
     "name": "Testbed App",
     "backend": "go"
   },
   "files": {
-    "README.md": "4648413947d0403f8034ec1a885a300f12174a42309e6bb5e42ae377553de735",
+    "README.md": "9ecb6655ac7533fbfbe51abb10eabf61c26e951f9ec794329c4748f4790d1b22",
     "host/.claude/rules/api-standard.md": "5184d80982545ca7f688f70f7c4b3074f3cf6f31fd49aab7f3f1bc93b7b95454",
     "host/.claude/rules/backend-modular-monolith.md": "12c060918c453ba113379274b94c69affda716a32e0ec9e0521f70a000076cc2",
     "host/.claude/rules/database.md": "b15b32495e70328365f14cc28b299a95ecdf37ed400a642e232db29c40d451eb",
@@ -46,12 +46,12 @@
     "host/apps/api/internal/kernel/http.go": "51ea4fe0e56263a3acb7357837f7848b5f40ecca6ee385ff54d5d8cbd0e8adcd",
     "host/apps/api/internal/kernel/jobs.go": "1f1334d0b26207f8b211201069d69bc70b88e7b6b57e61faf16cd032f6d88c01",
     "host/apps/api/internal/kernel/jobs_test.go": "b265fd41f8ae1e52ee8f15e62567dd9168e444101f21762d35db98b2711e0790",
-    "host/apps/api/internal/kernel/kernel.go": "99e30ebea6e1e9d5a0be087208ebe860c6afea4322477b331bb39d846df03999",
+    "host/apps/api/internal/kernel/kernel.go": "046eae68df1a16c9400be851435fa2aa75d73a3ec393062a95031e16fb249ca0",
     "host/apps/api/internal/kernel/kernel_mysql_test.go": "c25a1988934e925f42868f983f57f398a8a37c16ad6282dec69881cf41b8542f",
     "host/apps/api/internal/kernel/kerneltest/kerneltest.go": "f39f3e2ed89fa1853b5d60a6540571a303d66d2e0738f0fe1e6a95152519a30d",
     "host/apps/api/internal/kernel/kerneltest/kerneltest_test.go": "cddb00182e5d3808e57db5b014100fb913cf5c8cdea616e57cc322c1cee7003e",
-    "host/apps/api/internal/kernel/scope.go": "0f11a83bc4872f69726f97678ea7dec292a391b89f1b7d9e6a7910fc8eaae7b9",
-    "host/apps/api/internal/kernel/scope_test.go": "3374d7b1808f170cdadd98b8646e1e538da2b1f291b98040953bc331fd855ac9",
+    "host/apps/api/internal/kernel/scope.go": "5ddb41bb8d6dba10f03cd8c13a771c17ed095c0a4fd41fbf3cf4447b2eb002bb",
+    "host/apps/api/internal/kernel/scope_test.go": "edc3c38fbb9be98f8a7fe4348c5f5e1e05a9954289f343720467f21c7e582346",
     "host/apps/api/internal/kernel/tasks.go": "e49b3228dfbc6b0e289f0a99fceb07c7d51ff7a92372e5d9fb1b68cc87b62bdc",
     "host/apps/api/internal/kernel/tx.go": "795acf682bce6aafe9520031e5e6a13088e526f54ee2f54bba022ead0bba543f",
     "host/apps/api/internal/kernel/tx_test.go": "3a90e5bf0cc664540a0e0885215305eaaa8d29278c9497b97989cfeae019716f",
@@ -68,10 +68,10 @@
     "host/apps/api/internal/shared/request/stream_test.go": "d43d878a341710f3753c7c2fcfd21df5cec886e5df44523917968efa1f561238",
     "host/apps/api/internal/shared/response/response.go": "098bbce81d7df5bec5db53f0cdb1ec784c0606a8279343e72f71f4a4b0fd5ae1",
     "host/apps/api/internal/shared/validator/validator.go": "36510cf1a08cf3ce2b88a4daec5f3563876e15e0a510b5005972230046fe9891",
-    "host/apps/api/migrations/20261027152630_baseline.down.sql": "b4e0497804e46e0a0b0b8c31975b062152d551bac49c3c2e80932567b4085dcd",
-    "host/apps/api/migrations/20261027152630_baseline.up.sql": "64b76933c81e4ab8b5522041560c9c0a4bdb6ef3930efdb3197710c5176e631e",
-    "host/apps/api/migrations/20261027152631_kernel_6.down.sql": "a1d84e43bb3f854b677fd9e0a139c7c88e609807929d132d33c73aa167577c06",
-    "host/apps/api/migrations/20261027152631_kernel_6.up.sql": "b5220697cb80f43a51a494483f596fbd30819d1974a6507aceaae84ab77832eb",
+    "host/apps/api/migrations/20261029075110_baseline.down.sql": "b4e0497804e46e0a0b0b8c31975b062152d551bac49c3c2e80932567b4085dcd",
+    "host/apps/api/migrations/20261029075110_baseline.up.sql": "64b76933c81e4ab8b5522041560c9c0a4bdb6ef3930efdb3197710c5176e631e",
+    "host/apps/api/migrations/20261029075111_kernel_6.down.sql": "a1d84e43bb3f854b677fd9e0a139c7c88e609807929d132d33c73aa167577c06",
+    "host/apps/api/migrations/20261029075111_kernel_6.up.sql": "b5220697cb80f43a51a494483f596fbd30819d1974a6507aceaae84ab77832eb",
     "host/apps/api/sqlc.yaml": "d8e2fd130dc939262bc8ce98cf99bdf88e8016ef153f2f0c7603024e4e92b165",
     "host/apps/web/components.json": "b300c093b59ae762a59921a2d2f5e0680e4debd5d693b50a6030891ee5800a85",
     "host/apps/web/eslint.config.js": "8d410e8ca5511026a6597e9d2dae380a937450b574f9609b289ed92ee4a8bc01",
@@ -114,7 +114,7 @@
     "host/apps/web/src/shared/components/feedback/RouteError.tsx": "f8e5d0cf5fae22d3d077cd951f78d7d63a5d63de22f0d3100980a02fcc1d1d0c",
     "host/apps/web/src/shared/components/patterns/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "host/apps/web/src/shared/components/primitives/badge.tsx": "1826449df14b5214316ea97cf54b744de639d124f8622540c5c00b81a48a1844",
-    "host/apps/web/src/shared/components/primitives/button.tsx": "2bd9999f2becfc83364deebd01b1ab39d32d1c5afdf3c55409b49d07f5e8e5d9",
+    "host/apps/web/src/shared/components/primitives/button.tsx": "e5a255389dd3422372ba73c9dd0fb0a2fd172a907affeb8b7432acadd7ff7859",
     "host/apps/web/src/shared/components/primitives/card.tsx": "3992a164db7ff0ad817147e4070dcc017b5555290c5ad54d931c18a36eb4f5d1",
     "host/apps/web/src/shared/components/primitives/dialog.tsx": "a09c5c88685dba973e949dd5d2e4a523a74ffdc5e4ca3f8e86d2506cd7c08269",
     "host/apps/web/src/shared/components/primitives/input.tsx": "9ac79f5441f893872a16ca512757294e9225592074e32dc3d3c2319756c45044",
@@ -125,9 +125,9 @@
     "host/apps/web/src/shared/composition.tsx": "8f43b5351eade4892224c96735f3077b14209e300fe4fd5c6766edf59b9d2de9",
     "host/apps/web/src/shared/constants/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "host/apps/web/src/shared/hooks/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "host/apps/web/src/shared/kernel.ts": "bc743eabe49647a0e71cf3d3a9c61889b69c81edbf9b526e8defac25e0646ed7",
+    "host/apps/web/src/shared/kernel.ts": "9f18d7f895d5f21a7321caaa4b45545547ec3fcc93474ce81bcfb0050687a009",
     "host/apps/web/src/shared/layouts/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "host/apps/web/src/shared/lib/field-classes.ts": "71be594c234192b3d4752615c0b25311ae314d4c42f40b475f1dee01d1774b93",
+    "host/apps/web/src/shared/lib/field-classes.ts": "23a1d228e6313202d17dbbdb6ce07547d742c3845f5f73860fbb65415c23914b",
     "host/apps/web/src/shared/scope.ts": "143d8fa512f4fce1d4c27cd97f2883a0fd271e218c43bbc88fabd61b57b16f9c",
     "host/apps/web/src/shared/services/api-endpoints.ts": "70b29d268ea771f6c068eaf79d2c973f38d97910b55d57f80238ca1a69949eeb",
     "host/apps/web/src/shared/services/api-error.ts": "db663c1423d08865baefab1a6e03f3dc17dde84b1258ead1c010a6c31ed6f1df",
@@ -173,8 +173,8 @@
     "host/scripts/migrate.mjs": "f5b9630500cab413b49be3e1b05fb5a83d7945764f653a9b72c7e6ce42e42435",
     "host/scripts/sqlc.mjs": "6cb43dbe424c7ac28464671054b7e1dcac114a7eaa2002fdc1990973f414461b",
     "reference/api-standard.md": "a5a016f92308214762aa18f9f4597e18fa36bda3517d8e817c107b3446c8eb77",
-    "reference/backend-go.md": "6a33657014b33a13f443f5d7c84e6bae8403b7d14e98706196238c15f57d468b",
+    "reference/backend-go.md": "f7640a277cad62458bd96cb64af5c2a99e24d117694329d235d365bcfc7efc63",
     "reference/backend-modular-monolith.md": "433807a47f77f03d634c5d4fe941451183f596dc29820d5b87aa827cf81f96b2",
-    "reference/frontend.md": "a0947ead772f67b10f22d648c9511d3cc4d65255a1d0d28e0db2ae334660a095"
+    "reference/frontend.md": "d0eca530a315cf26a39d5a49fb25ea8aaddbaa42540a3bf976c38f34f5b7fc1e"
   }
 }

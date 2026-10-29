@@ -1,6 +1,6 @@
-# Kernel 6 (pinned)
+# Kernel 7 (pinned)
 
-The kernel every module in this library builds on, pinned from rudis-monorepo rudis-monorepo/kernel/v6.0.
+The kernel every module in this library builds on, pinned from rudis-monorepo rudis-monorepo/kernel/v7.0.
 **Read-only**: nothing here is edited by hand — `npm run check` refuses any change that
 kernel.lock.json does not record, and a kernel update arrives only through
 `scripts/kernel-sync.mjs`, in a commit of its own.
