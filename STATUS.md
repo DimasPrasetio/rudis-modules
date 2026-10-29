@@ -154,8 +154,9 @@ date, what, the tags it created.
     zone (`setDisplayTimeZone`, set by organization); density `touch` (44 px targets) with
     full screen and idle reset for kiosks.
   - Tools: `sandbox.mjs` wires late ports after their provider (users ↔ organization is no
-    cycle); the testbed makes `.testbed/` itself. The Kernel request text for 0.18 is in
-    `docs/kernel-requests/`; the issue is opened by the maintainer.
+    cycle); the testbed makes `.testbed/` itself. The Kernel request for 0.18 is
+    [rudis-modules#1](https://github.com/DimasPrasetio/rudis-modules/issues/1) (text in
+    `docs/kernel-requests/`).
 
 - **28 Oct 2026 — ROADMAP.md: one rule, one kit, for Indonesian rules (89 modules).**
   - `idtax` became `taxrules` and now holds every tax rate and calculation, PPh 21 (TER, PTKP,

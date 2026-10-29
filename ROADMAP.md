@@ -237,8 +237,8 @@ dibutuhkan, tetapi jarang menjadi kebutuhan pertama.
 ## Gelombang 0 — Perbaikan fondasi (audit 28 Oktober 2026)
 
 Audit fungsional, UI/UX, dan arsitektur atas modul yang sudah ada sebelum roadmap dimulai.
-**P0** dan **P1** sudah diperbaiki (29 Oktober 2026); 0.18 menunggu issue Kernel request dibuka di
-rudis-monorepo (teksnya di `docs/kernel-requests/`); **P2** (0.20) terbuka dan diambil bila sebuah
+**P0** dan **P1** sudah diperbaiki (29 Oktober 2026); 0.18 menunggu rilis kernel atas issue
+[rudis-modules#1](https://github.com/DimasPrasetio/rudis-modules/issues/1) (teksnya di `docs/kernel-requests/`); **P2** (0.20) terbuka dan diambil bila sebuah
 gelombang membutuhkannya.
 Akar masalahnya kini menjadi [syarat wajib](#syarat-wajib-setiap-modul--pelajaran-audit-28-oktober-2026)
 untuk setiap modul berikutnya. Kolom *Syarat wajib* menunjuk kelompok dan nomor butirnya
@@ -263,7 +263,7 @@ untuk setiap modul berikutnya. Kolom *Syarat wajib* menunjuk kelompok dan nomor 
 | 0.15 | ✅ | Tabel: identitas baris sebagai tautan, state tanpa menghilangkan header, tata letak HP, header mengikuti density, pilih semua lintas halaman, pengumuman jumlah terpilih | `ui-data` 0.3.0 | F25 |
 | 0.16 | ✅ | Breadcrumb yang bisa kembali ke daftar (API crumbs); tanggal mengikuti zona perusahaan/cabang | `app-shell` 0.7.0, `ui-core` 0.6.0, `organization` 0.2.0 | F23 |
 | 0.17 | ✅ | Density sentuh/kiosk (target 44–48 px, tanpa hover, layar penuh + reset idle) | `bingkai-navy` 0.2.0 (density `touch`), `ui-core` 0.6.0 (layar penuh, reset idle) | F23 |
-| 0.18 | 🟡 teks siap, issue belum dibuka | Kernel request: cincin fokus Button/FIELD ≥3:1 di kernel (kini ditimpa preset); penanda "satu atau banyak perusahaan" yang diekspor kernel | kernel (rudis-monorepo) — teks: `docs/kernel-requests/0001-focus-ring-and-company-count.md` | F23 |
+| 0.18 | 🟡 issue [rudis-modules#1](https://github.com/DimasPrasetio/rudis-modules/issues/1) dibuka 29 Okt 2026, menunggu rilis kernel | Kernel request: cincin fokus Button/FIELD ≥3:1 di kernel (kini ditimpa preset); penanda "satu atau banyak perusahaan" yang diekspor kernel | kernel (rudis-monorepo) — teks: `docs/kernel-requests/0001-focus-ring-and-company-count.md` | F23 |
 | 0.19 | ✅ | Alat: `npm run sandbox` gagal bila `organization` dipasang bersama `users` (siklus port terlambat); `testbed --only documents` gagal bila `.testbed/` belum ada | `scripts/` (cek di skenario `lifecycle`) | G27 |
 | 0.20 | ⬜ P2 | MFA TOTP + kode pemulihan, daftar sesi aktif & cabut, undangan pengguna lewat email, wajib ganti sandi, daftar sandi bocor + 15 karakter; hard lock periode; bounce email; deteksi duplikat pelanggan; rantai hash audit; mode gelap | `auth`, `users`, `period`, `mailer`, `customers`, `audit-log`, tema | B, C |
 

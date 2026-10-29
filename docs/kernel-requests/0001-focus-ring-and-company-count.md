@@ -1,8 +1,8 @@
 # Kernel request: focus ring ≥ 3:1 on Button and FIELD; "one company or several" exported
 
-Drafted from the audit of 28 October 2026 (ROADMAP.md › Gelombang 0 › 0.18). To be opened as a
-GitHub issue on this repository with the `kernel-request` template; this file is the text and
-stays here as the record of what was asked and why.
+Drafted from the audit of 28 October 2026 (ROADMAP.md › Gelombang 0 › 0.18). Opened as
+[rudis-modules#1](https://github.com/DimasPrasetio/rudis-modules/issues/1) on 29 October 2026;
+this file is the text and stays here as the record of what was asked and why.
 
 Kernel: 6 (`rudis-monorepo/kernel/v6.0`, eeef47e).
 
