@@ -71,7 +71,8 @@ check fails, say so here rather than leaving the last good run standing.
 
 ## In progress
 
-Nothing is being built.
+- **Persediaan: `costing`, `items`, `stock`** — Dimas Prasetio with Claude, branch `persediaan`,
+  plan [docs/plans/PLAN-PERSEDIAAN.md](docs/plans/PLAN-PERSEDIAAN.md) (awaiting approval).
 
 When you start a module (on its branch — [docs/BUILDING_MODULES.md](docs/BUILDING_MODULES.md)
 › Working across several commits), add a line here: what, who, the branch, and the plan in
