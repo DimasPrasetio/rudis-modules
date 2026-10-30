@@ -153,6 +153,35 @@
       "listens": []
     },
     {
+      "id": "costing",
+      "version": "0.1.0",
+      "kind": "gokit",
+      "title": "Costing (Go kit)",
+      "summary": "Stock valuation by moving average or FIFO — the two methods PSAK 202 and Indonesian tax accept (no LIFO): receive, issue, and undo either one exactly, with a take's value and what stays always adding up to the sen (a position with nothing left is worth nothing), FIFO takes recorded per layer so a cancellation puts goods back where they came from, and unit conversion to the base unit. Pure functions over a position the caller loads and stores.",
+      "when_to_use": [
+        "A module that moves stock and must know what it is worth: the stock ledger, production, a bill of materials."
+      ],
+      "when_not_to_use": [
+        "Selling prices, margins, or landed-cost allocation — price lists and purchasing.",
+        "Specific identification per serial number — it comes with lots and serials in the stock module."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {},
+      "permissions": [],
+      "ports": [],
+      "ui": [],
+      "go_kits": [
+        "money"
+      ],
+      "owns_tables": [],
+      "scoped": false,
+      "emits": [],
+      "listens": []
+    },
+    {
       "id": "customers",
       "version": "0.3.0",
       "kind": "fullstack",
@@ -301,6 +330,77 @@
       ],
       "scoped": true,
       "emits": [],
+      "listens": []
+    },
+    {
+      "id": "items",
+      "version": "0.1.0",
+      "kind": "fullstack",
+      "title": "Items",
+      "summary": "A company's goods and services: code (generated or typed), name, kind (goods or service, fixed), whether its stock is tracked (fixed; never for a service), category, a base unit (fixed) and alternative units with a fixed factor to it, barcode, and the optional Coretax goods/service code and unit code (format checked only) — deactivated, never deleted. Its own unit and category lists, with the common units one click away. Offers ItemCatalog (Get, Search, Usable inside a posting's d.Tx, Unit and Units for conversion to the base unit). Publishes its lifecycle as events (items.item.created/changed/deactivated/activated).",
+      "when_to_use": [
+        "The app records goods or services: stock, purchasing, sales, a POS, price lists, invoices."
+      ],
+      "when_not_to_use": [
+        "Stock on hand, warehouses, and valuation — the stock module, which reads items through its port.",
+        "Selling prices — a price-lists module; variants and images — a later items version.",
+        "The official Coretax code lists — a coretax kit; this module only checks the codes' format.",
+        "One item list shared by several companies — this module keeps each company's own."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 7,
+      "provides": {
+        "contracts": [
+          "ItemCatalog"
+        ],
+        "kernel": []
+      },
+      "permissions": [
+        "items.read",
+        "items.manage"
+      ],
+      "ports": [],
+      "ui": [
+        "ui-core",
+        "ui-data",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [
+        "money"
+      ],
+      "owns_tables": [
+        "itm_units",
+        "itm_categories",
+        "itm_items",
+        "itm_item_units",
+        "itm_settings"
+      ],
+      "scoped": true,
+      "emits": [
+        {
+          "name": "items.item.created",
+          "version": 1,
+          "description": "An item was added: {id, company_id, code, name, kind}."
+        },
+        {
+          "name": "items.item.changed",
+          "version": 1,
+          "description": "An item or one of its parts changed: {id, company_id, code, name, part} — part is \"item\" (its own fields: code, name, category, barcode…) or \"unit\" (an alternative unit added, activated again, or deactivated). Read the current state through the contract."
+        },
+        {
+          "name": "items.item.deactivated",
+          "version": 1,
+          "description": "An item was deactivated: {id, company_id, code, name}. New documents may not use it; its old ones stay."
+        },
+        {
+          "name": "items.item.activated",
+          "version": 1,
+          "description": "A deactivated item was activated again: {id, company_id, code, name}."
+        }
+      ],
       "listens": []
     },
     {
@@ -659,6 +759,115 @@
       "scoped": true,
       "emits": [],
       "listens": []
+    },
+    {
+      "id": "stock",
+      "version": "0.1.0",
+      "kind": "fullstack",
+      "title": "Stock",
+      "summary": "A company's stock: warehouses (optionally per branch); receipts, issues, and adjustments that go draft → posted → cancelled with gapless numbers (BM/BK/PS) and the period lock; a ledger of every movement with its value by moving average or FIFO (the costing kit), chosen per company and locked once stock moves; balances per item and warehouse that never go negative and are never dated backwards; cancellation by exact reversing rows. Pages for stock on hand, the stock card, and the movement report (opening, in, out, closing). Offers StockLedger so purchasing, sales, and a POS move stock inside their own transaction. Keeps item code and name current from items.item.changed.",
+      "when_to_use": [
+        "The app keeps goods in one or more warehouses and must know what is there and what it is worth: a warehouse log, a shop, a distributor, a kitchen store."
+      ],
+      "when_not_to_use": [
+        "Lots, serial numbers, expiry dates, or rack locations — a later version of this module.",
+        "Transfers between warehouses, stock counts, picking and packing — the stock-transfer, stock-count, and wms modules build on StockLedger.",
+        "Revaluing history after a back-dated movement — not done: movements are dated forward per item and warehouse."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 7,
+      "provides": {
+        "contracts": [
+          "StockLedger"
+        ],
+        "kernel": []
+      },
+      "permissions": [
+        "stock.read",
+        "stock.draft",
+        "stock.post",
+        "stock.cancel",
+        "stock.manage"
+      ],
+      "ports": [
+        {
+          "name": "Items",
+          "required": true,
+          "description": "Find, check, and convert the units of the items stock moves.",
+          "adapters": [
+            "items"
+          ]
+        },
+        {
+          "name": "Numbers",
+          "required": true,
+          "description": "Declare the numbering of receipts, issues, and adjustments and take the next number inside the posting's transaction.",
+          "adapters": [
+            "numbering"
+          ]
+        },
+        {
+          "name": "Periods",
+          "required": false,
+          "description": "Declare the inventory area and refuse postings and cancellations dated in a closed period.",
+          "adapters": [
+            "period"
+          ]
+        },
+        {
+          "name": "Branches",
+          "required": false,
+          "description": "The company's branches a warehouse may belong to; without it every warehouse belongs to the company as a whole.",
+          "adapters": [
+            "organization"
+          ]
+        }
+      ],
+      "ui": [
+        "ui-core",
+        "ui-data",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [
+        "money",
+        "costing",
+        "docstate"
+      ],
+      "owns_tables": [
+        "stk_settings",
+        "stk_warehouses",
+        "stk_items",
+        "stk_documents",
+        "stk_document_lines",
+        "stk_moves",
+        "stk_balances",
+        "stk_layers",
+        "stk_layer_takes"
+      ],
+      "scoped": true,
+      "emits": [
+        {
+          "name": "stock.document.posted",
+          "version": 1,
+          "description": "A receipt, issue, or adjustment was posted: {id, company_id, kind, number, warehouse_id}."
+        },
+        {
+          "name": "stock.document.cancelled",
+          "version": 1,
+          "description": "A posted document was cancelled and its movements reversed: {id, company_id, kind, number, warehouse_id}."
+        },
+        {
+          "name": "stock.level.changed",
+          "version": 1,
+          "description": "An item's quantity in a warehouse changed: {company_id, warehouse_id, item_id, qty} — qty in the base unit, after the change. Once per item per document or movement."
+        }
+      ],
+      "listens": [
+        "items.item.changed"
+      ]
     },
     {
       "id": "suppliers",

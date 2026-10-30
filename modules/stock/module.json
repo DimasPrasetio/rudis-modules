@@ -1,0 +1,203 @@
+{
+  "id": "stock",
+  "version": "0.1.0",
+  "kind": "fullstack",
+  "title": "Stock",
+  "summary": "A company's stock: warehouses (optionally per branch); receipts, issues, and adjustments that go draft → posted → cancelled with gapless numbers (BM/BK/PS) and the period lock; a ledger of every movement with its value by moving average or FIFO (the costing kit), chosen per company and locked once stock moves; balances per item and warehouse that never go negative and are never dated backwards; cancellation by exact reversing rows. Pages for stock on hand, the stock card, and the movement report (opening, in, out, closing). Offers StockLedger so purchasing, sales, and a POS move stock inside their own transaction. Keeps item code and name current from items.item.changed.",
+  "when_to_use": [
+    "The app keeps goods in one or more warehouses and must know what is there and what it is worth: a warehouse log, a shop, a distributor, a kitchen store."
+  ],
+  "when_not_to_use": [
+    "Lots, serial numbers, expiry dates, or rack locations — a later version of this module.",
+    "Transfers between warehouses, stock counts, picking and packing — the stock-transfer, stock-count, and wms modules build on StockLedger.",
+    "Revaluing history after a back-dated movement — not done: movements are dated forward per item and warehouse."
+  ],
+  "stacks": [
+    "go"
+  ],
+  "requires_kernel": 7,
+  "provides": {
+    "contracts": [
+      "StockLedger"
+    ],
+    "kernel": []
+  },
+  "ports": [
+    {
+      "name": "Items",
+      "required": true,
+      "description": "Find, check, and convert the units of the items stock moves.",
+      "adapters": {
+        "items": {
+          "file": "adapters/items_items.go",
+          "expr": "stockItems{items: itemsModule.Client()}"
+        }
+      }
+    },
+    {
+      "name": "Numbers",
+      "required": true,
+      "description": "Declare the numbering of receipts, issues, and adjustments and take the next number inside the posting's transaction.",
+      "adapters": {
+        "numbering": {
+          "file": "adapters/numbers_numbering.go",
+          "expr": "stockNumbers{numbering: numberingModule.Client()}",
+          "requires": "0.1.0"
+        }
+      }
+    },
+    {
+      "name": "Periods",
+      "required": false,
+      "description": "Declare the inventory area and refuse postings and cancellations dated in a closed period.",
+      "adapters": {
+        "period": {
+          "file": "adapters/periods_period.go",
+          "expr": "stockPeriods{period: periodModule.Client()}",
+          "requires": "0.1.0"
+        }
+      }
+    },
+    {
+      "name": "Branches",
+      "required": false,
+      "description": "The company's branches a warehouse may belong to; without it every warehouse belongs to the company as a whole.",
+      "adapters": {
+        "organization": {
+          "file": "adapters/branches_organization.go",
+          "expr": "stockBranches{organization: organizationModule.Client()}",
+          "requires": "0.1.0"
+        }
+      }
+    }
+  ],
+  "ui": [
+    "ui-core",
+    "ui-data",
+    "ui-forms",
+    "ui-feedback"
+  ],
+  "go_kits": [
+    "money",
+    "costing",
+    "docstate"
+  ],
+  "permissions": [
+    {
+      "name": "stock.read",
+      "description": "Melihat stok, dokumen stok, kartu stok, dan laporan mutasi"
+    },
+    {
+      "name": "stock.draft",
+      "description": "Membuat dan mengubah draf penerimaan, pengeluaran, dan penyesuaian stok"
+    },
+    {
+      "name": "stock.post",
+      "description": "Memposting dokumen stok"
+    },
+    {
+      "name": "stock.cancel",
+      "description": "Membatalkan dokumen stok yang sudah diposting"
+    },
+    {
+      "name": "stock.manage",
+      "description": "Mengelola gudang dan metode biaya persediaan"
+    }
+  ],
+  "emits": [
+    {
+      "name": "stock.document.posted",
+      "version": 1,
+      "description": "A receipt, issue, or adjustment was posted: {id, company_id, kind, number, warehouse_id}."
+    },
+    {
+      "name": "stock.document.cancelled",
+      "version": 1,
+      "description": "A posted document was cancelled and its movements reversed: {id, company_id, kind, number, warehouse_id}."
+    },
+    {
+      "name": "stock.level.changed",
+      "version": 1,
+      "description": "An item's quantity in a warehouse changed: {company_id, warehouse_id, item_id, qty} — qty in the base unit, after the change. Once per item per document or movement."
+    }
+  ],
+  "listens": [
+    {
+      "event": "items.item.changed",
+      "subscriber": "stock.refresh-item",
+      "handler": "stockModule.OnItemChanged"
+    }
+  ],
+  "scoped": true,
+  "owns_tables": [
+    "stk_settings",
+    "stk_warehouses",
+    "stk_items",
+    "stk_documents",
+    "stk_document_lines",
+    "stk_moves",
+    "stk_balances",
+    "stk_layers",
+    "stk_layer_takes"
+  ],
+  "env": [],
+  "routes": {
+    "api": [
+      "GET /api/v1/stock/settings",
+      "PUT /api/v1/stock/settings",
+      "GET /api/v1/stock/warehouses",
+      "GET /api/v1/stock/branches",
+      "POST /api/v1/stock/warehouses",
+      "PUT /api/v1/stock/warehouses/{id}",
+      "POST /api/v1/stock/warehouses/{id}/deactivate",
+      "POST /api/v1/stock/warehouses/{id}/activate",
+      "GET /api/v1/stock/items/lookup",
+      "GET /api/v1/stock/items/{id}/units",
+      "GET /api/v1/stock/items/{id}/card",
+      "GET /api/v1/stock/balances",
+      "GET /api/v1/stock/report",
+      "GET /api/v1/stock/documents",
+      "POST /api/v1/stock/documents",
+      "GET /api/v1/stock/documents/{id}",
+      "PUT /api/v1/stock/documents/{id}",
+      "DELETE /api/v1/stock/documents/{id}",
+      "POST /api/v1/stock/documents/{id}/post",
+      "POST /api/v1/stock/documents/{id}/cancel",
+      "POST /api/v1/stock/documents/{id}/amend"
+    ],
+    "web": [
+      "/stock",
+      "/stock/documents",
+      "/stock/documents/new",
+      "/stock/documents/:id",
+      "/stock/items/:id",
+      "/stock/report",
+      "/stock/warehouses"
+    ]
+  },
+  "npm_dependencies": {},
+  "go_dependencies": {},
+  "install": {
+    "api": "apps/api/internal/modules/stock",
+    "web": "apps/web/src/modules/stock"
+  },
+  "register": {
+    "go": {
+      "import": "internal/modules/stock",
+      "build": [
+        "stockModule, err := stock.New(d, {{port:Items}}, {{port:Numbers}}, {{port:Periods}}, {{port:Branches}})",
+        "if err != nil {",
+        "\treturn err",
+        "}"
+      ],
+      "routes": [
+        "stockModule.Routes(mux)"
+      ],
+      "after": []
+    },
+    "web": {
+      "import": "@/modules/stock/module",
+      "export": "stockModule"
+    }
+  }
+}

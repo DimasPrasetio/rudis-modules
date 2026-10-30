@@ -1,0 +1,128 @@
+{
+  "id": "items",
+  "version": "0.1.0",
+  "kind": "fullstack",
+  "title": "Items",
+  "summary": "A company's goods and services: code (generated or typed), name, kind (goods or service, fixed), whether its stock is tracked (fixed; never for a service), category, a base unit (fixed) and alternative units with a fixed factor to it, barcode, and the optional Coretax goods/service code and unit code (format checked only) — deactivated, never deleted. Its own unit and category lists, with the common units one click away. Offers ItemCatalog (Get, Search, Usable inside a posting's d.Tx, Unit and Units for conversion to the base unit). Publishes its lifecycle as events (items.item.created/changed/deactivated/activated).",
+  "when_to_use": [
+    "The app records goods or services: stock, purchasing, sales, a POS, price lists, invoices."
+  ],
+  "when_not_to_use": [
+    "Stock on hand, warehouses, and valuation — the stock module, which reads items through its port.",
+    "Selling prices — a price-lists module; variants and images — a later items version.",
+    "The official Coretax code lists — a coretax kit; this module only checks the codes' format.",
+    "One item list shared by several companies — this module keeps each company's own."
+  ],
+  "stacks": [
+    "go"
+  ],
+  "requires_kernel": 7,
+  "provides": {
+    "contracts": [
+      "ItemCatalog"
+    ],
+    "kernel": []
+  },
+  "ports": [],
+  "ui": [
+    "ui-core",
+    "ui-data",
+    "ui-forms",
+    "ui-feedback"
+  ],
+  "go_kits": [
+    "money"
+  ],
+  "permissions": [
+    {
+      "name": "items.read",
+      "description": "Melihat barang dan jasa"
+    },
+    {
+      "name": "items.manage",
+      "description": "Menambah, mengubah, dan menonaktifkan barang, satuan, dan kategori"
+    }
+  ],
+  "emits": [
+    {
+      "name": "items.item.created",
+      "version": 1,
+      "description": "An item was added: {id, company_id, code, name, kind}."
+    },
+    {
+      "name": "items.item.changed",
+      "version": 1,
+      "description": "An item or one of its parts changed: {id, company_id, code, name, part} — part is \"item\" (its own fields: code, name, category, barcode…) or \"unit\" (an alternative unit added, activated again, or deactivated). Read the current state through the contract."
+    },
+    {
+      "name": "items.item.deactivated",
+      "version": 1,
+      "description": "An item was deactivated: {id, company_id, code, name}. New documents may not use it; its old ones stay."
+    },
+    {
+      "name": "items.item.activated",
+      "version": 1,
+      "description": "A deactivated item was activated again: {id, company_id, code, name}."
+    }
+  ],
+  "scoped": true,
+  "owns_tables": [
+    "itm_units",
+    "itm_categories",
+    "itm_items",
+    "itm_item_units",
+    "itm_settings"
+  ],
+  "env": [],
+  "routes": {
+    "api": [
+      "GET /api/v1/items",
+      "GET /api/v1/items/lookup",
+      "POST /api/v1/items",
+      "GET /api/v1/items/settings",
+      "PUT /api/v1/items/settings",
+      "GET /api/v1/items/units",
+      "POST /api/v1/items/units",
+      "POST /api/v1/items/units/defaults",
+      "PUT /api/v1/items/units/{id}",
+      "GET /api/v1/items/categories",
+      "POST /api/v1/items/categories",
+      "PUT /api/v1/items/categories/{id}",
+      "GET /api/v1/items/{id}",
+      "PUT /api/v1/items/{id}",
+      "POST /api/v1/items/{id}/deactivate",
+      "POST /api/v1/items/{id}/activate",
+      "POST /api/v1/items/{id}/units",
+      "POST /api/v1/items/{id}/units/{uid}/deactivate"
+    ],
+    "web": [
+      "/items",
+      "/items/:id"
+    ]
+  },
+  "npm_dependencies": {},
+  "go_dependencies": {},
+  "install": {
+    "api": "apps/api/internal/modules/items",
+    "web": "apps/web/src/modules/items"
+  },
+  "register": {
+    "go": {
+      "import": "internal/modules/items",
+      "build": [
+        "itemsModule, err := items.New(d)",
+        "if err != nil {",
+        "\treturn err",
+        "}"
+      ],
+      "routes": [
+        "itemsModule.Routes(mux)"
+      ],
+      "after": []
+    },
+    "web": {
+      "import": "@/modules/items/module",
+      "export": "itemsModule"
+    }
+  }
+}

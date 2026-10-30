@@ -212,6 +212,9 @@ modulnya ditulis.
 | ✅ 0.2.0 | `ui-feedback` | ui | toast (dengan Urungkan), dialog konfirmasi, `Banner` |
 | ✅ 0.2.0 | `ui-gallery` | web | galeri komponen kit |
 | ✅ 0.2.0 | `bingkai-navy` | preset | tema back-office, density sentuh/kiosk |
+| ✅ 0.1.0 | `costing` | gokit | rata-rata bergerak & FIFO, pembatalan persis, konversi satuan |
+| ✅ 0.1.0 | `items` | fullstack | `ItemCatalog` (barang & jasa, satuan & konversi, kode Coretax opsional); event siklus hidup |
+| ✅ 0.1.0 | `stock` | fullstack | `StockLedger` (gudang, penerimaan/pengeluaran/penyesuaian, buku besar bernilai, kartu stok, laporan mutasi) |
 
 ## Ringkasan 89 modul baru
 
@@ -221,12 +224,12 @@ modulnya ditulis.
 | 1 | Kit dasar | 10 | 0 |
 | 2 | Platform lintas bidang | 14 | 0 |
 | 3 | Layanan, kantor & publik | 11 | 0 |
-| 4 | Penjualan & pembelian | 8 | 0 |
-| 5 | Gudang, POS & toko | 17 | 0 |
+| 4 | Penjualan & pembelian | 8 | 1 (`items` 0.1.0, dibangun lebih awal untuk aplikasi gudang) |
+| 5 | Gudang, POS & toko | 17 | 2 (`costing`, `stock` 0.1.0) |
 | 6 | Keuangan & pajak | 9 | 0 |
 | 7 | SDM | 10 | 0 |
 | 8 | Vertikal & lanjutan | 10 | 0 |
-| | **Total** | **89** | **0** |
+| | **Total** | **89** | **3** |
 
 Gelombang mengikuti arah port: modul di gelombang N hanya memakai port yang penyedianya ada di
 gelombang yang sama atau sebelumnya (atau modul yang sudah ada). Gelombang 3 sengaja sebelum ERP:
@@ -328,7 +331,7 @@ Modul siap pakai untuk kantor, sekolah, klinik, komunitas, dan usaha jasa.
 | # | Status | Modul | Jenis | Fungsi | Port wajib | Port opsional · kontrak · event | Catatan | Rujukan |
 |---|---|---|---|---|---|---|---|---|
 | 36 | ⬜ | `taxrules` | gokit | Semua tarif & perhitungan pajak Indonesia, bertanggal berlaku: PPN (12% × DPP 11/12, kode transaksi), PPh 4(2)/15/22/23 (tarif lebih tinggi tanpa NPWP), PPh 21 (kategori TER A/B/C & tabelnya, PTKP, biaya jabatan, hitung tahunan Pasal 17 untuk Desember/bulan keluar), PPh final pesangon, bea meterai | — | kit `money` | PMK 131/2024 [V]; PMK 168/2023 kategori TER A/B/C [V]; PPh 23 & meterai Rp10.000 di atas Rp5 juta [S]; tabel TER lengkap & PPh final pesangon (PP 68/2009) [U] | S21, S24 |
-| 37 | ⬜ | `items` | fullstack | Produk & jasa: varian, kategori, satuan & konversi, SKU/barcode, gambar, kode barang/jasa Coretax | — | `FileStore`, `DocNumbers` (→ numbering); kontrak `ItemCatalog` · emits `items.item.changed` / `archived` | Kode barang wajib di faktur (PER-11/PJ/2025) [S] | S7, S9, S35 |
+| 37 | ✅ 0.1.0 (varian & gambar di 0.2) | `items` | fullstack | Produk & jasa: varian, kategori, satuan & konversi, SKU/barcode, gambar, kode barang/jasa Coretax | — | `FileStore`, `DocNumbers` (→ numbering); kontrak `ItemCatalog` · emits `items.item.changed` / `archived` | Kode barang wajib di faktur (PER-11/PJ/2025) [S] | S7, S9, S35 |
 | 38 | ⬜ | `pricing` | fullstack | Daftar harga per cabang/kanal/kelompok pelanggan, harga bertingkat per jumlah, harga terjadwal, harga pokok vs jual | `ItemCatalog` | `CustomerDirectory`; kontrak `PriceResolver` · emits `pricing.list.changed` | | S9 |
 | 39 | ⬜ | `promotions` | fullstack | Promo (%, Rp, beli X gratis Y, bundel, minimum belanja, happy hour) dan voucher/kupon berbatas pemakaian | `ItemCatalog` | `CustomerDirectory`, `LoyaltyTier`; kontrak `PromotionEngine` · emits `promotions.voucher.redeemed` | | S9, S14 |
 | 40 | ⬜ | `sales` | fullstack | Penawaran, pesanan penjualan, pengiriman (surat jalan), retur | `CustomerDirectory`, `ItemCatalog` | `PriceResolver`, `PromotionEngine`, `StockReservation`, `Approvals`, `DocNumbers`, `PeriodLock`; kontrak `OrderIntake`, `OrderFulfilment` · emits `sales.order.confirmed`, `sales.delivery.confirmed` | | S1, S2, S7 |
@@ -340,10 +343,10 @@ Modul siap pakai untuk kantor, sekolah, klinik, komunitas, dan usaha jasa.
 
 | # | Status | Modul | Jenis | Fungsi | Port wajib | Port opsional · kontrak · event | Catatan | Rujukan |
 |---|---|---|---|---|---|---|---|---|
-| 44 | ⬜ | `costing` | gokit | Lapisan FIFO, rata-rata bergerak, konversi satuan di atas `money`/`Qty` | — | — | Dipakai stock, production, bom | S2, S12 |
+| 44 | ✅ 0.1.0 | `costing` | gokit | Lapisan FIFO, rata-rata bergerak, konversi satuan di atas `money`/`Qty` | — | — | Dipakai stock, production, bom | S2, S12 |
 | 45 | ⬜ | `offline-sync` | gokit | Penerimaan batch dari perangkat offline: UUID klien, kunci idempotensi, urutan per perangkat, kebijakan konflik | — | — | Dipakai pos dan aplikasi lapangan | S9 |
 | 46 | ⬜ | `ui-offline` | ui | Antrean kirim IndexedDB, cache katalog & harga, lencana status sinkron | — | — | Service worker PWA mungkin butuh dukungan shell kernel (kernel request) [U] | S9 |
-| 47 | ⬜ | `stock` | fullstack | Multi-gudang, lokasi rak (lantai/baris/kolom/rak), buku besar mutasi stok, stok tersedia & reservasi, lot/serial & kedaluwarsa (FEFO), valuasi rata-rata/FIFO, peringatan stok minimum | `ItemCatalog` | `PeriodLock`; kontrak `StockLedger`, `StockReservation` · kit `costing` · emits `stock.level.changed`, `stock.lot.expiry-flagged` | | S9, S10, S12 |
+| 47 | ✅ 0.1.0 (lot/kedaluwarsa, rak, reservasi menyusul) | `stock` | fullstack | Multi-gudang, lokasi rak (lantai/baris/kolom/rak), buku besar mutasi stok, stok tersedia & reservasi, lot/serial & kedaluwarsa (FEFO), valuasi rata-rata/FIFO, peringatan stok minimum | `ItemCatalog` | `PeriodLock`; kontrak `StockLedger`, `StockReservation` · kit `costing` · emits `stock.level.changed`, `stock.lot.expiry-flagged` | | S9, S10, S12 |
 | 48 | ⬜ | `stock-transfer` | fullstack | Transfer antar gudang/cabang dengan status dalam perjalanan, terima sebagian, selisih, penyesuaian & barang rusak | `StockLedger` | `Approvals`, `DocNumbers` · emits `stock-transfer.transfer.shipped` / `received` | Toko satu gudang tidak perlu memasangnya | S9, S10 |
 | 49 | ⬜ | `stock-count` | fullstack | Stok opname (penuh/siklus/buta), scan, impor Excel, tinjau selisih, posting penyesuaian | `StockLedger` | menyumbang target impor ke `data-io` · kit `ui-scan` · emits `stock-count.count.posted` | | S9, S12 |
 | 50 | ⬜ | `wms` | fullstack | Saran putaway, daftar ambil (per pesanan/SKU/rak; batch/zona), packing, ambil FEFO, isi ulang rak, layar scanner | `StockLedger` | `OrderFulfilment` (→ sales), `ShipmentBooking` (→ shipping) · kit `ui-scan` · emits `wms.order.packed` | | S10 |
