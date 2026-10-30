@@ -1,6 +1,6 @@
 # Rencana: persediaan — `costing`, `items`, `stock`
 
-Status: **menunggu persetujuan maintainer** · branch `persediaan` · ROADMAP #44, #37, #47.
+Status: **disetujui maintainer** (Dimas Prasetio, 30 Oktober 2026, semua keputusan D1–D13 sesuai rekomendasi) · branch `persediaan` · ROADMAP #44, #37, #47.
 
 ## 1. Tujuan dan batas
 
