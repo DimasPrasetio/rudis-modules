@@ -197,7 +197,7 @@ modulnya ditulis.
 | ✅ 0.3.1 | `settings` | fullstack | `SettingsClient` (profil perusahaan, NPWP, logo) |
 | ✅ 0.3.0 | `audit-log` | fullstack | jejak audit `d.Audit` |
 | ✅ 0.3.0 | `files` | fullstack | `FileClient` (unggah ke `DATA_DIR`) |
-| ✅ 0.3.0 | `mailer` | fullstack | `MailClient` (antrean email per perusahaan) |
+| ✅ 0.3.1 | `mailer` | fullstack | `MailClient` (antrean email per perusahaan) |
 | ✅ 0.1.0 | `numbering` | fullstack | `NumberingClient` (nomor dokumen) |
 | ✅ 0.1.0 | `period` | fullstack | `PeriodClient` (tutup buku per area) |
 | ✅ 0.3.0 | `customers` | fullstack | `CustomerClient` (identitas pajak Coretax); event siklus hidup |
@@ -279,7 +279,7 @@ Tanpa tabel, tanpa port. Dipakai banyak modul di gelombang berikutnya.
 | 4 | ⬜ | `geo` | gokit | Jarak haversine, titik dalam poligon, geofence radius | Untuk absensi GPS dan check-in lokasi | S4 |
 | 5 | ⬜ | `provider-http` | gokit | Klien HTTP untuk penyedia luar: timeout, retry dengan backoff, batas laju, mode sandbox/live, log dengan rahasia tersamar | Dipakai payments, shipping, whatsapp, marketplace-sync, efaktur | S16, S17 |
 | 6 | ⬜ | `webhook-inbox` | gokit | Verifikasi webhook masuk (HMAC, SHA512 Midtrans, token Xendit), kunci idempotensi, jendela replay; tabel inbox tetap milik modul pemakai | Midtrans SHA512 dan Xendit `x-callback-token` [V] | S16, S17, S18 |
-| 7 | ⬜ | `ui-print` | ui | Cetak dari browser: tata letak cetak A4, struk thermal 58/80 mm (ESC/POS lewat WebUSB/Bluetooth/Serial), fallback `window.print` | Server tidak bisa menjangkau printer toko | S9, S36 |
+| 7 | ⬜ | `ui-print` | ui | Cetak dari browser: tata letak cetak A4, struk thermal 58/80 mm (ESC/POS lewat WebUSB/Bluetooth/Serial), fallback `window.print` | Server tidak bisa menjangkau printer toko; dipakai POS, dapur, badge buku tamu | S9, S36 |
 | 8 | ⬜ | `ui-scan` | ui | Input scanner barcode (keyboard wedge), scan kamera (BarcodeDetector), scan-ke-field | Dipakai gudang, POS, buku tamu, aset | S9 |
 | 9 | ⬜ | `ui-live` | ui | Hook pembaruan realtime (SSE) untuk layar dapur, antrean, status pesanan | Memakai streaming respons kernel; WebSocket bila kernel mendukung [U] | S9 |
 | 10 | ⬜ | `ui-charts` | ui | Grafik bertema token (batang, garis, donat, sparkline, KPI) | Mengikuti `semantic-colors`; dipakai reports dan dasbor modul | S6, S7 |
@@ -314,7 +314,7 @@ Modul siap pakai untuk kantor, sekolah, klinik, komunitas, dan usaha jasa.
 | 25 | ⬜ | `forms` | fullstack | Pembuat formulir & survei: logika, validasi, tautan publik & QR, skor kuis, ekspor jawaban, bisa disematkan di modul lain | — | `RegionLookup`, `FileStore`; kontrak `FormSource` · emits `forms.response.submitted` | Untuk pendaftaran, PPDB, intake | S1 |
 | 26 | ⬜ | `booking` | fullstack | Satu mesin reservasi: ruang, lapangan, layanan, dokter — aturan ketersediaan, slot, kapasitas, buffer, DP, pengingat, daftar tunggu | — | `WorkCalendar`, `PaymentGateway`, `Notifier`; kontrak `BookingSource` · emits `booking.reservation.confirmed` / `cancelled` | | S1 |
 | 27 | ⬜ | `queue` | fullstack | Antrean: layanan, loket, tiket (kiosk/online/WhatsApp), panggilan + layar + suara, transfer, statistik waktu tunggu | — | `Notifier`, `BookingSource`; kontrak `QueueSource` · kit `ui-live` · emits `queue.ticket.called` | Jembatan antrean Mobile JKN sebagai adaptor nanti [U] | S39 |
-| 28 | ⬜ | `visitor-log` | fullstack | Buku tamu digital: check-in kiosk/QR, undangan pra-daftar, foto KTP/selfie terenkripsi, notifikasi tuan rumah, badge, daftar pantau, check-out | `HostDirectory` (→ users, employees) | `Notifier`, `FileStore` · kit `barcode`, `fieldcrypt`, `ui-scan` · emits `visitor-log.visit.checked-in` | Foto KTP = data pribadi (UU PDP): persetujuan & masa simpan | S31, S32 |
+| 28 | ⬜ | `visitor-log` | fullstack | Buku tamu digital: check-in kiosk/QR, undangan pra-daftar, foto KTP/selfie terenkripsi, notifikasi tuan rumah, badge, daftar pantau, check-out | `HostDirectory` (→ users, employees) | `Notifier` (→ notifications; MVP: → mailer), `FileStore` (→ files); kontrak `VisitorPersonalData` (dibaca `PersonalDataProvider` milik data-privacy) · kit `barcode`, `fieldcrypt`, `ui-scan`, `ui-print` (badge) · emits `visitor-log.visit.checked-in` | Foto KTP = data pribadi (UU PDP): persetujuan dicatat saat check-in, masa simpan dengan purge terjadwal milik modul sendiri sampai `data-privacy` dipasang | S31, S32 |
 | 29 | ⬜ | `helpdesk` | fullstack | Tiket dari portal/email/WhatsApp, tim & penugasan, kebijakan SLA, balasan siap pakai, survei kepuasan | — | `WorkCalendar`, `Mailer`, `ConversationSource` (→ whatsapp), `ArticleSource` (→ knowledge-base); kontrak `TicketSink` · emits `helpdesk.ticket.created` | | S33 |
 | 30 | ⬜ | `knowledge-base` | fullstack | Artikel internal & publik, kategori, versi, pencarian, umpan balik "membantu?" | — | `FileStore`, `Approvals`; kontrak `ArticleSource` · emits `knowledge-base.article.published` | SOP internal tanpa website | S33 |
 | 31 | ⬜ | `cms` | fullstack | Halaman & seksi, berita/blog, menu, media, SEO & slug, alur terbit | — | `FileStore`, `Approvals`; kontrak `ContentSource` · emits `cms.content.published` | Situs sekolah, desa, klinik, perusahaan | S1 |
