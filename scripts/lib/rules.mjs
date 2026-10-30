@@ -8,7 +8,7 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, normalize, relative } from "node:path";
+import { dirname, join, normalize, relative, sep } from "node:path";
 
 const TOP_ENTRIES = new Set(["module.json", "README.md", "api", "web", "shared", "lib", "migrations", "adapters"]);
 const INSTALL_TARGET = {
@@ -171,12 +171,12 @@ const SQL_TABLE_REFS = /\b(?:FROM|JOIN|INTO|(?<!(?:ON|KEY|FOR)\s+)UPDATE|TABLE(?
 const SQL_WORDS = new Set(["select", "duplicate", "delete", "update", "insert", "set", "where", "values", "lateral", "dual"]);
 const PROSE_FIELDS = new Set(["title", "summary", "when_to_use", "when_not_to_use", "version"]);
 
-/** Every file under dir, as paths relative to it. */
+/** Every file under dir, as paths relative to it, with "/" between folders on every OS. */
 export function walk(dir) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { recursive: true, withFileTypes: true })
     .filter((e) => e.isFile() && e.name !== ".DS_Store")
-    .map((e) => relative(dir, join(e.parentPath ?? e.path, e.name)));
+    .map((e) => relative(dir, join(e.parentPath ?? e.path, e.name)).split(sep).join("/"));
 }
 
 const goImports = (src) => {

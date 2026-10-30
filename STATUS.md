@@ -20,7 +20,7 @@ or the testbed's scenarios without touching it.
 |---|---|---|---|---|---|
 | [app-shell](modules/app-shell/README.md) | web | 0.7.0 | 6 | — | full, organization, documents, inventory |
 | [audit-log](modules/audit-log/README.md) | fullstack | 0.3.0 | 6 | yes | full, organization, documents, inventory |
-| [auth](modules/auth/README.md) | fullstack | 0.8.0 | 6 | — | full, no-rbac, auth-alone, lifecycle, organization, documents, inventory |
+| [auth](modules/auth/README.md) | fullstack | 0.8.1 | 6 | — | full, no-rbac, auth-alone, lifecycle, organization, documents, inventory |
 | [costing](modules/costing/README.md) | gokit | 0.1.0 | 6 | — | inventory |
 | [customers](modules/customers/README.md) | fullstack | 0.3.0 | 6 | yes | documents |
 | [docstate](modules/docstate/README.md) | gokit | 0.1.0 | 6 | — | documents, inventory |
@@ -110,6 +110,10 @@ fixed; add one when you accept a limit.
 - **Migration 004 of `rbac` cannot be fully undone.** Rolling it back keeps company 1's roles;
   a role that existed only in another company is lost (its members fall back to company 1's
   role of the same name, if any).
+- **The testbed does not run on Windows.** It starts `npm` without a shell, which Windows refuses
+  (`npm` is `npm.cmd`); run it on macOS or Linux. Windows has `npm run check` and CI's `windows`
+  job (every Go module's unit tests). A checkout with CRLF line ends (`core.autocrlf=true`) also
+  makes `gofmt -l` list every installed Go file.
 - **Testbed flake under load (kernel).** `TestMySQLDedupeQueuesBehindARunningTask` can time out
   when the machine is busy (other MySQL work running). It passes alone; rerun before blaming a
   module.
@@ -142,6 +146,20 @@ fixed; add one when you accept a limit.
 
 Newest first. One entry per change that released something or changed how the library works:
 date, what, the tags it created.
+
+- **30 Oct 2026 — Windows: auth's tests, the check, and a CI job (T-20261030-2.3).**
+  - Released: `auth` 0.8.1 — its unit tests read one test clock instead of the wall clock, which
+    on Windows moves in steps of about a millisecond: a sign-in right after a password change
+    landed on the change's instant and was (rightly) refused. A test now pins that refusal. No
+    change to the module's code.
+  - CI: new job `windows` (windows-latest) — one sandbox with every Go module, `go vet` and
+    `go test -count=1`, no database.
+  - `npm run check` works on Windows: `walk` gives `/` paths on every OS (`go-layers` read
+    `infrastructure\repository.go` as outside infrastructure/), and the testbed's header is read
+    with CRLF line ends too (`testbed-documented`).
+  - Testbed: `users-alone` starts its API with an explicit unreachable `DB_DSN` instead of the
+    one in `.env` — the next kernel's `.env.example` leaves it empty, which the API refuses.
+  - Tags on merge: `auth/v0.8.1`.
 
 - **30 Oct 2026 — persediaan: barang masuk, keluar, dan stok (ROADMAP.md #37, #44, #47; plan
   [PLAN-PERSEDIAAN.md](docs/plans/PLAN-PERSEDIAAN.md)).**

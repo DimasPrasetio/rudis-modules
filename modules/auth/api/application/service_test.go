@@ -23,6 +23,32 @@ import (
 type fakeStore struct {
 	users map[string]ports.Credentials
 	byID  map[int64]ports.User
+	// clock stamps password changes; a full service reads the same one (newServiceWith).
+	clock *testClock
+}
+
+// testClock stands still until a test moves it. Windows' clock moves in steps of about a
+// millisecond and Linux's every nanosecond, so two steps of a test can land on the same instant
+// on one and not on the other; on this clock they do so only when the test says.
+type testClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func newTestClock() *testClock {
+	return &testClock{t: time.Now().UTC().Truncate(time.Microsecond)}
+}
+
+func (c *testClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *testClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
 }
 
 func newFakeStore(t *testing.T, email, password string, active bool) *fakeStore {
@@ -177,7 +203,7 @@ func (f fakePasswords) SetPassword(_ context.Context, id int64, password string)
 			f.store.users[email] = c
 		}
 	}
-	u.PasswordChangedAt = time.Now()
+	u.PasswordChangedAt = f.store.clock.Now()
 	f.store.byID[id] = u
 	return nil
 }
@@ -213,12 +239,14 @@ func newService(store ports.UserStore) *application.Service {
 	})
 }
 
-// newFullService has every optional port wired, and does its after-the-answer work at once.
+// newFullService has every optional port wired, and does its after-the-answer work at once. It
+// and the store read store.clock: time passes only when the test moves it.
 func newFullService(store *fakeStore) (*application.Service, *outbox) {
 	return newServiceWith(store, fakePasswords{store})
 }
 
 func newServiceWith(store *fakeStore, passwords ports.PasswordWriter) (*application.Service, *outbox) {
+	store.clock = newTestClock()
 	mail := &outbox{}
 	svc := application.NewService(application.Deps{
 		Users: store, Passwords: passwords, Mailer: mail,
@@ -227,6 +255,7 @@ func newServiceWith(store *fakeStore, passwords ports.PasswordWriter) (*applicat
 		AppURL: "https://app.example.com/", AppName: "App",
 	})
 	application.RunNow(svc)
+	application.SetClock(svc, store.clock.Now)
 	return svc, mail
 }
 
@@ -593,6 +622,7 @@ func TestChangePasswordKeepsThisDeviceAndEndsTheOthers(t *testing.T) {
 	svc, _ := newFullService(store)
 	here := login(t, svc, "ana@example.com", "secret123")
 	there := login(t, svc, "ana@example.com", "secret123")
+	store.clock.Advance(time.Second)
 	if _, err := svc.ChangePassword(context.Background(), 1, "wrong-current", "new-secret-1", office); status(t, err) != http.StatusUnprocessableEntity {
 		t.Fatalf("a wrong current password must be a 422, got %v", err)
 	}
@@ -608,8 +638,41 @@ func TestChangePasswordKeepsThisDeviceAndEndsTheOthers(t *testing.T) {
 			t.Errorf("%s still works after the change", name)
 		}
 	}
+	store.clock.Advance(time.Second)
 	if _, err := svc.Login(context.Background(), "ana@example.com", "new-secret-1", office); err != nil {
 		t.Fatalf("the new password does not sign in: %v", err)
+	}
+}
+
+// A session opened at the very instant the password changed may have been opened with the old
+// password: it ends, on every OS.
+func TestASessionOpenedAtTheInstantOfAPasswordChangeEnds(t *testing.T) {
+	store := newFakeStore(t, "ana@example.com", "secret123", true)
+	svc, _ := newFullService(store)
+	s := login(t, svc, "ana@example.com", "secret123")
+	u := store.byID[1]
+	u.PasswordChangedAt = store.clock.Now()
+	store.byID[1] = u
+	if _, err := svc.Resolve(context.Background(), s.Token); status(t, err) != http.StatusUnauthorized {
+		t.Fatalf("a session opened at the instant of the change survived: %v", err)
+	}
+}
+
+// A sign-in checked at the very instant the password changed cannot tell whether the password it
+// checked was the old or the new one, so it opens no session — even with the new password, and
+// on every OS. A moment later the new password signs in.
+func TestASignInAtTheInstantOfAPasswordChangeGetsNoSession(t *testing.T) {
+	store := newFakeStore(t, "ana@example.com", "secret123", true)
+	svc, _ := newFullService(store)
+	if _, err := svc.ChangePassword(context.Background(), 1, "secret123", "new-secret-1", office); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Login(context.Background(), "ana@example.com", "new-secret-1", office); status(t, err) != http.StatusUnauthorized {
+		t.Fatalf("a sign-in at the instant of the change opened a session: %v", err)
+	}
+	store.clock.Advance(time.Microsecond)
+	if _, err := svc.Login(context.Background(), "ana@example.com", "new-secret-1", office); err != nil {
+		t.Fatalf("the new password does not sign in after the change: %v", err)
 	}
 }
 
@@ -638,6 +701,7 @@ func TestForgotPasswordByEmail(t *testing.T) {
 		t.Fatalf("mail: %v", mail.sent)
 	}
 	tok := resetToken(t, mail)
+	store.clock.Advance(time.Second)
 	if err := svc.ResetPassword(context.Background(), tok, "short", office); status(t, err) != http.StatusUnprocessableEntity {
 		t.Fatalf("a short password: want 422, got %v", err)
 	}
@@ -650,6 +714,7 @@ func TestForgotPasswordByEmail(t *testing.T) {
 	if _, err := svc.Resolve(context.Background(), old.Token); status(t, err) != http.StatusUnauthorized {
 		t.Fatal("a session from before the reset still works")
 	}
+	store.clock.Advance(time.Second)
 	if _, err := svc.Login(context.Background(), "ana@example.com", "reset-secret-1", office); err != nil {
 		t.Fatalf("the reset password does not sign in: %v", err)
 	}
@@ -697,6 +762,7 @@ func TestAResetLinkDiesWhenThePasswordChanges(t *testing.T) {
 	svc, mail := newFullService(store)
 	_ = svc.RequestReset(context.Background(), "ana@example.com", office)
 	link := resetToken(t, mail)
+	store.clock.Advance(time.Second)
 	if _, err := svc.ChangePassword(context.Background(), 1, "secret123", "new-secret-1", office); err != nil {
 		t.Fatal(err)
 	}

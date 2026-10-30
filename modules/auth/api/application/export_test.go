@@ -6,8 +6,9 @@ import "time"
 // the result.
 func RunNow(s *Service) { s.later = func(f func()) { f() } }
 
-// SetClock makes the service and its limiter read the time from now, so tests can move it.
+// SetClock makes the service and its limiters read the time from now, so tests can move it.
 func SetClock(s *Service, now func() time.Time) {
 	s.now = now
 	s.limiter.now = now
+	s.flows.now = now
 }

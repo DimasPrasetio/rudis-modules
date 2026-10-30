@@ -81,3 +81,39 @@ jobs:
       - name: mysql client
         run: sudo apt-get update && sudo apt-get install -y mysql-client
       - run: node scripts/testbed.mjs
+
+  # Every Go module's unit tests on Windows, where the wall clock moves in steps of about a
+  # millisecond (Linux's every nanosecond): a test that needs two moments to differ passes on one
+  # and fails on the other. One sandbox project holds them all; no database — the testbed above
+  # runs the MySQL checks.
+  windows:
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      # The rules read paths and line ends as Windows writes them (checkout uses CRLF here).
+      - run: node scripts/catalog.mjs --check
+      - name: sqlc
+        run: CGO_ENABLED=0 go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 && echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: a project with every Go module
+        run: |
+          ids=$(node -e 'const fs = require("fs"); console.log(fs.readdirSync("modules").filter((id) => JSON.parse(fs.readFileSync(`modules/${id}/module.json`, "utf8")).stacks?.includes("go")).join(" "))')
+          node scripts/sandbox.mjs $ids --no-preset --no-setup --dir .sandbox/windows
+      - name: go vet and go test
+        working-directory: .sandbox/windows
+        run: |
+          (cd apps/api && go mod tidy)
+          node scripts/sqlc.mjs
+          cd apps/api
+          go vet ./...
+          go test -count=1 ./...

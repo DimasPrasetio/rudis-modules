@@ -778,7 +778,9 @@ async function usersAlone() {
     installModule(LIB, dir, "users");
     pass("users installed alone (with its ui kits)");
     if (!build(dir)) return;
-    api = await startApi(dir, 18093, {});
+    // No database is needed, but the API refuses to start without DB_DSN — and the scaffold's
+    // .env.example leaves it empty. One nobody listens on: the pool connects only when used.
+    api = await startApi(dir, 18093, { DB_DSN: "x:x@tcp(127.0.0.1:1)/none" });
     const r = await client(18093).call("GET", "/api/v1/users");
     expect("guarded route with nothing in d.Auth → 401", r.status === 401 && r.body.success === false, r.body);
   } catch (err) {
