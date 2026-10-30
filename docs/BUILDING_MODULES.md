@@ -239,9 +239,9 @@ async function myarea() {
 }
 ```
 
-**Ports:** every scenario uses its own API ports. Taken: 18091–18099 and 18101–18102 (some are
+**Ports:** every scenario uses its own API ports. Taken: 18091–18099 and 18101–18104 (some are
 held in variables — `grep -n "1809[0-9]\|181[0-9][0-9]" scripts/testbed.mjs` finds them all);
-take the next free ones, 18103 onward, and add them to this line.
+take the next free ones, 18105 onward, and add them to this line.
 `scripts/` is code-owned: a new or changed scenario is reviewed by the maintainer with the
 module's pull request.
 

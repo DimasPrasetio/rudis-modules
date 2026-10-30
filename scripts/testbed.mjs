@@ -35,6 +35,13 @@
 //               a customer on hold or inactive refused by the fixture's posting through its
 //               port, companies kept apart; the master-data events (customers 0.3, users 0.9)
 //               reaching the fixture's subscriber after the commit — none for a refused change
+//   inventory   items, stock, and the costing kit against MySQL: units and a carton of 12, receipts
+//               valued at the average, issues, never negative, never backdated, Rp0 only on
+//               purpose, adjustments, an exact cancel of only the latest movement and its
+//               amendment, the stock card and the movement report against the ledger, gapless
+//               numbers from two containers at once, the inventory period lock, a clerk who
+//               drafts but never posts, items.item.changed reaching stock, company B apart and on
+//               FIFO with its layers restored by a cancel
 // Each: install → npm install → go mod tidy → sqlc generate → gofmt → go vet → go test →
 // build:web → build:api → run the binary and call the API.
 //
@@ -1890,7 +1897,269 @@ async function documents() {
   }
 }
 
-const scenarios = { full, "no-rbac": noRbac, "auth-alone": authAlone, "users-alone": usersAlone, lifecycle, kernel6, organization, documents };
+async function inventory() {
+  log("\n=== inventory: items, stock, costing — goods in and out, valued, against MySQL ===");
+  const lib = tempDir("libinv-");
+  const dir = scaffold("inventory");
+  const cli = (...a) => spawnSync(process.execPath, [join(lib, "scripts/module.mjs"), ...a, "--project", dir], { encoding: "utf8" });
+  let api;
+  let api2;
+  const g = (...a) => spawnSync("git", ["-C", lib, ...a], { encoding: "utf8" });
+  try {
+    copyLibrary(lib);
+    g("init", "-q", "-b", "main");
+    g("add", "-A");
+    g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "library");
+    for (const [id, opts] of [
+      ["app-shell"], ["users"],
+      ["auth", { ports: { UserStore: "users", PasswordWriter: "users" } }],
+      ["rbac", { ports: { UserDirectory: "users" } }],
+      ["organization", { ports: { UserDirectory: "users" } }],
+      ["audit-log", { ports: { UserDirectory: "users" } }],
+      ["period"],
+      ["numbering", { ports: { Units: "organization" } }],
+      ["items"],
+      ["stock", { ports: { Items: "items", Numbers: "numbering", Periods: "period", Branches: "organization" } }],
+    ]) installModule(lib, dir, id, opts);
+    let r = cli("upgrade", "users", "--port", "Placements=organization");
+    expect("users' late Placements port wired to organization", r.status === 0, r.stdout + r.stderr);
+    r = cli("upgrade", "rbac", "--port", "Placements=organization");
+    expect("…and rbac's", r.status === 0, r.stdout + r.stderr);
+    expect("the costing kit came along with stock", existsSync(join(dir, "apps/api/internal/shared/costing/costing.go")));
+    expect("stock listens to items.item.changed in the registry",
+      readFileSync(join(dir, "apps/api/internal/modules/registry.go"), "utf8").includes("stockModule.OnItemChanged"));
+    if (!build(dir)) return;
+    if (!DB_DSN) {
+      skip("inventory: API checks against MySQL — set TESTBED_DB_DSN");
+      return;
+    }
+    const db = parseDsn(DB_DSN);
+    const name = `rudis_testbed_inv_${Date.now()}`;
+    try {
+      const dsn = freshDatabase(dir, db, name);
+      const env = { DB_DSN: dsn, USERS_BOOTSTRAP_EMAIL: "admin@example.com", USERS_BOOTSTRAP_PASSWORD: "admin-pass-123", APP_TIMEZONE: "Asia/Jakarta" };
+      const [p1, p2] = [18103, 18104];
+      api = await startApi(dir, p1, env);
+      api2 = await startApi(dir, p2, env);
+      const q = (sql) => mysqlQuery(db, sql, name);
+      const at = (scope) => (scope ? { "X-Scope": scope } : {});
+      const signIn = async (port, email, password) => {
+        const c = client(port);
+        const res = await c.call("POST", "/api/v1/auth/login", { email, password });
+        expect(`${email} signs in on :${port}`, res.status === 200, res.body);
+        return c;
+      };
+      const admin = await signIn(p1, "admin@example.com", "admin-pass-123");
+      const admin2 = await signIn(p2, "admin@example.com", "admin-pass-123");
+      const S = "/api/v1/stock";
+
+      // Items: the common units, an item with a carton of 12, a service.
+      let res = await admin.call("POST", "/api/v1/items/units/defaults");
+      expect("the common units are added (PCS, KG, DUS, …)", res.status === 200 && res.body.data.added.includes("PCS") && res.body.data.added.includes("DUS"), res.body);
+      const units = (await admin.call("GET", "/api/v1/items/units")).body.data;
+      const unit = (code) => units.find((u) => u.code === code)?.id;
+      const item = async (body, scope) => {
+        const x = await admin.call("POST", "/api/v1/items", body, at(scope));
+        if (x.status !== 201) fail(`item ${body.name}: ${JSON.stringify(x.body)}`);
+        return x.body.data;
+      };
+      const kopi = await item({ name: "Kopi Bubuk 250g", kind: "goods", is_stocked: true, base_unit_id: unit("PCS") });
+      expect("an item gets the generated code BRG-00001", kopi?.code === "BRG-00001", kopi);
+      res = await admin.call("POST", `/api/v1/items/${kopi.id}/units`, { unit_id: unit("DUS"), factor: "12" });
+      expect("1 DUS = 12 PCS", res.status === 201 || res.status === 200, res.body);
+      const gula = await item({ name: "Gula Pasir", kind: "goods", is_stocked: true, base_unit_id: unit("KG") });
+      const teh = await item({ name: "Teh Celup", kind: "goods", is_stocked: true, base_unit_id: unit("PCS") });
+      const ongkir = await item({ name: "Ongkos kirim", kind: "service", is_stocked: false, base_unit_id: unit("UNIT") });
+      res = await admin.call("PUT", `/api/v1/items/${kopi.id}`, { base_unit_id: unit("KG") });
+      expect("an item's base unit never changes (422)", res.status === 422, res.body);
+
+      // Warehouses.
+      res = await admin.call("POST", `${S}/warehouses`, { code: "gu1", name: "Gudang Utama" });
+      expect("warehouse GU1", res.status === 201 && res.body.data.code === "GU1", res.body);
+      const gu1 = res.body.data.id;
+      expect("a warehouse code is unique (422)", (await admin.call("POST", `${S}/warehouses`, { code: "GU1", name: "Lagi" })).status === 422);
+
+      const draft = async (c, body, scope) => {
+        const x = await c.call("POST", `${S}/documents`, body, at(scope));
+        if (x.status !== 201) fail(`draft: ${JSON.stringify(x.body)}`);
+        return x.body.data;
+      };
+      const post = (c, id, scope) => c.call("POST", `${S}/documents/${id}/post`, undefined, at(scope));
+      const doc = (kind, date, lines, wh = gu1) => ({ kind, warehouse_id: wh, date, counterparty: "", reference: "", notes: "", lines });
+      const bal = (itemId, wh = gu1, scope) =>
+        admin.call("GET", `${S}/balances?item_id=${itemId}&warehouse_id=${wh}`, undefined, at(scope)).then((x) => x.body?.data?.[0]);
+
+      // A receipt in two units, posted: numbered, valued, balanced.
+      let d = await draft(admin, doc("receipt", "2025-03-01", [
+        { item_id: kopi.id, unit_code: "DUS", qty: "1", unit_cost: "120000" },
+        { item_id: kopi.id, unit_code: "PCS", qty: "12", unit_cost: "12000" },
+        { item_id: gula.id, unit_code: "KG", qty: "10", unit_cost: "15000" },
+      ]));
+      expect("a draft keeps the unit's factor and the base quantity (1 DUS → 12 PCS)", d?.lines?.[0]?.factor === "12" && d.lines[0].base_qty === "12.0000", d);
+      expect("a draft moves nothing", q("SELECT COUNT(*) FROM stk_moves") === "0");
+      res = await post(admin, d.id);
+      const receipt = res.body?.data;
+      expect("posting gives BM/2025/03/0001 and values each line", res.status === 200 && receipt.number === "BM/2025/03/0001" && receipt.lines[0].value === "120000.00" && receipt.total_value === "414000.00", res.body);
+      let b = await bal(kopi.id);
+      expect("Kopi in GU1: 24 PCS worth Rp264.000 (average Rp11.000)", b?.qty === "24.0000" && b.value === "264000.00" && b.unit_cost === "11000.00", b);
+      expect("…as MySQL holds it, DECIMAL to the sen", q(`SELECT CONCAT(qty, '|', value) FROM stk_balances WHERE item_id = ${kopi.id}`) === "24.0000|264000.00");
+      expect("the costing method is locked by the first movement", q("SELECT locked FROM stk_settings WHERE company_id = 1") === "1");
+      res = await admin.call("PUT", `${S}/settings`, { cost_method: "fifo" });
+      expect("…and cannot change any more (409)", res.status === 409, res.body);
+
+      // An issue valued at the average.
+      d = await draft(admin, doc("issue", "2025-03-02", [{ item_id: kopi.id, unit_code: "PCS", qty: "5" }]));
+      res = await post(admin, d.id);
+      const issue = res.body?.data;
+      expect("issuing 5 PCS takes Rp55.000 out (BK/2025/03/0001)", res.status === 200 && issue.number === "BK/2025/03/0001" && issue.lines[0].value === "-55000.00", res.body);
+      b = await bal(kopi.id);
+      expect("Kopi: 19 PCS worth Rp209.000", b?.qty === "19.0000" && b.value === "209000.00", b);
+
+      // Refusals.
+      d = await draft(admin, doc("issue", "2025-03-03", [{ item_id: kopi.id, unit_code: "DUS", qty: "2" }]));
+      res = await post(admin, d.id);
+      expect("never negative: 2 DUS (24 PCS) out of 19 → 409, saying what is there", res.status === 409 && /tidak cukup/.test(res.body.message) && /19/.test(res.body.message), res.body);
+      expect("…the refused document stays a draft without a number", q(`SELECT CONCAT(status, '|', IFNULL(number, '-')) FROM stk_documents WHERE id = ${d.id}`) === "draft|-");
+      expect("…and BK/2025/03/0002 was not used up", q("SELECT COUNT(*) FROM stk_documents WHERE number = 'BK/2025/03/0002'") === "0");
+      d = await draft(admin, doc("issue", "2025-03-01", [{ item_id: kopi.id, unit_code: "PCS", qty: "1" }]));
+      res = await post(admin, d.id);
+      expect("never backdated: an issue dated before Kopi's last movement → 409", res.status === 409 && /lebih awal/.test(res.body.message), res.body);
+      res = await admin.call("POST", `${S}/documents`, doc("receipt", "2025-03-03", [{ item_id: gula.id, unit_code: "KG", qty: "1", unit_cost: "0" }]));
+      expect("a receipt at Rp0 without \"Tanpa biaya\" → 422 on the line's cost", res.status === 422 && JSON.stringify(res.body).includes("lines.0.unit_cost"), res.body);
+      res = await admin.call("POST", `${S}/documents`, doc("receipt", "2025-03-03", [{ item_id: ongkir.id, unit_code: "", qty: "1", unit_cost: "1" }]));
+      expect("a service never moves stock (422)", res.status === 422, res.body);
+      res = await admin.call("POST", `${S}/documents`, doc("receipt", "2025-03-03", [{ item_id: gula.id, unit_code: "DUS", qty: "1", unit_cost: "1" }]));
+      expect("a unit the item does not use → 422", res.status === 422 && JSON.stringify(res.body).includes("lines.0.unit_code"), res.body);
+
+      // Zero cost on purpose; adjustments at the average.
+      d = await draft(admin, doc("receipt", "2025-03-04", [{ item_id: gula.id, unit_code: "KG", qty: "2", unit_cost: null, zero_cost: true }]));
+      res = await post(admin, d.id);
+      expect("a bonus received \"Tanpa biaya\" adds quantity, no value", res.status === 200 && res.body.data.lines[0].value === "0.00", res.body);
+      b = await bal(gula.id);
+      expect("Gula: 12 KG worth Rp150.000", b?.qty === "12.0000" && b.value === "150000.00", b);
+      d = await draft(admin, doc("adjustment", "2025-03-05", [{ item_id: gula.id, unit_code: "KG", qty: "-2" }]));
+      res = await post(admin, d.id);
+      expect("an adjustment −2 KG takes Rp25.000 (PS/2025/03/0001)", res.status === 200 && res.body.data.number === "PS/2025/03/0001" && res.body.data.lines[0].value === "-25000.00", res.body);
+
+      // Cancelling: exact, and only the latest.
+      res = await admin.call("POST", `${S}/documents/${receipt.id}/cancel`, { reason: "salah gudang" });
+      expect("cancelling the receipt after goods left → 409 (a later movement exists)", res.status === 409 && /sesudah dokumen ini/.test(res.body.message), res.body);
+      res = await admin.call("POST", `${S}/documents/${issue.id}/cancel`, { reason: "x" });
+      expect("cancelling without a usable reason → 422", res.status === 422, res.body);
+      res = await admin.call("POST", `${S}/documents/${issue.id}/cancel`, { reason: "salah jumlah" });
+      expect("cancelling the issue", res.status === 200 && res.body.data.status === "cancelled", res.body);
+      b = await bal(kopi.id);
+      expect("…puts Kopi back exactly: 24 PCS worth Rp264.000", b?.qty === "24.0000" && b.value === "264000.00", b);
+      expect("…by a reversing row, nothing deleted", q(`SELECT COUNT(*) FROM stk_moves WHERE item_id = ${kopi.id}`) === "4" &&
+        q(`SELECT COUNT(*) FROM stk_moves WHERE item_id = ${kopi.id} AND reverses IS NOT NULL`) === "1");
+      res = await admin.call("POST", `${S}/documents/${issue.id}/amend`);
+      expect("amending starts a draft BK/2025/03/0001-1", res.status === 201 && res.body.data.status === "draft" && res.body.data.number === "BK/2025/03/0001-1", res.body);
+
+      // The stock card and the movement report agree with the ledger.
+      res = await admin.call("GET", `${S}/items/${kopi.id}/card?warehouse_id=${gu1}&from=2025-03-01&to=2025-03-31`);
+      const moves = res.body?.data?.moves ?? [];
+      expect("the stock card shows 4 rows, the reversal marked, ending at 24", res.status === 200 && moves.length === 4 && moves.filter((m) => m.is_reversal).length === 1 &&
+        moves[moves.length - 1].qty_after === "24.0000" && moves[0].document_number === "BM/2025/03/0001", res.body);
+      res = await admin.call("GET", `${S}/items/${kopi.id}/card?warehouse_id=${gu1}&from=2025-03-02&to=2025-03-31`);
+      expect("…opening on 2 March with what came before", res.body?.data?.openings?.[0]?.qty === "24.0000", res.body);
+      res = await admin.call("GET", `${S}/report?from=2025-03-01&to=2025-03-31&warehouse_id=${gu1}`);
+      const row = res.body?.data?.rows?.find((x) => x.item_id === kopi.id);
+      expect("the movement report: Kopi opening 0, in 24, out 0 (the cancelled issue nets out), closing 24 / Rp264.000",
+        row?.opening_qty === "0.0000" && row.in_qty === "24.0000" && row.out_qty === "0.0000" && row.closing_qty === "24.0000" && row.closing_value === "264000.00", row);
+      const g = res.body?.data?.rows?.find((x) => x.item_id === gula.id);
+      expect("…Gula in 12, out 2, closing 10 / Rp125.000", g?.in_qty === "12.0000" && g.out_qty === "2.0000" && g.closing_value === "125000.00", g);
+      res = await admin.call("GET", `${S}/balances?q=${encodeURIComponent("%")}`);
+      expect("searching \"%\" matches it literally, not everything", res.status === 200 && res.body.meta.total === 0, res.body);
+
+      // Gapless numbers and one balance from two containers at once.
+      const april = [];
+      for (let i = 0; i < 10; i++) april.push(await draft(admin, doc("receipt", "2025-04-10", [{ item_id: teh.id, unit_code: "PCS", qty: "1", unit_cost: "1000" }])));
+      const results = await Promise.all(april.map((x, i) => post(i % 2 ? admin2 : admin, x.id)));
+      const numbers = results.map((x) => x.body?.data?.number).filter(Boolean).sort();
+      expect("10 receipts posted at once from two containers → BM/2025/04/0001…0010, no gap",
+        results.every((x) => x.status === 200) && JSON.stringify(numbers) === JSON.stringify(Array.from({ length: 10 }, (_, i) => `BM/2025/04/${String(i + 1).padStart(4, "0")}`)),
+        results.filter((x) => x.status !== 200).map((x) => x.body).slice(0, 2));
+      b = await bal(teh.id);
+      expect("…and Teh holds exactly 10 PCS worth Rp10.000", b?.qty === "10.0000" && b.value === "10000.00", b);
+
+      // The period lock.
+      res = await admin.call("PUT", "/api/v1/period/locks/inventory", { locked_through: "2025-03-31", reason: "" });
+      expect("inventory closed through March", res.status === 200, res.body);
+      d = await draft(admin, doc("receipt", "2025-03-20", [{ item_id: teh.id, unit_code: "PCS", qty: "1", unit_cost: "1" }]));
+      expect("a March receipt in a closed period → 409", (await post(admin, d.id)).status === 409);
+      expect("cancelling a March document → 409 (closed books do not change)",
+        (await admin.call("POST", `${S}/documents/${receipt.id}/cancel`, { reason: "periode tutup" })).status === 409);
+
+      // Rights: a clerk drafts, never posts or manages.
+      res = await admin.call("POST", "/api/v1/rbac/roles", { name: "Staf gudang", description: "", permissions: ["stock.read", "stock.draft", "items.read"] });
+      const role = res.body?.data?.id;
+      res = await admin.call("POST", "/api/v1/users", { name: "Staf Gudang", email: "gudang@example.com", password: "gudang-pass-123" });
+      await admin.call("POST", `/api/v1/rbac/roles/${role}/members`, { user_id: res.body?.data?.id });
+      const clerk = await signIn(p1, "gudang@example.com", "gudang-pass-123");
+      d = await draft(clerk, doc("issue", "2025-04-11", [{ item_id: teh.id, unit_code: "PCS", qty: "1" }]));
+      expect("the clerk saves a draft", !!d?.id && d.can_post === false, d);
+      expect("…but cannot post it (403)", (await post(clerk, d.id)).status === 403);
+      expect("…nor add a warehouse (403)", (await clerk.call("POST", `${S}/warehouses`, { code: "X", name: "X" })).status === 403);
+      expect("…nor change the costing method (403)", (await clerk.call("PUT", `${S}/settings`, { cost_method: "fifo" })).status === 403);
+
+      // items.item.changed reaches stock after the commit: its copy of the name follows.
+      res = await admin.call("PUT", `/api/v1/items/${kopi.id}`, { name: "Kopi Robusta 250g" });
+      expect("Kopi renamed in items", res.status === 200, res.body);
+      expect("stock's copy follows from items.item.changed",
+        (await waitFor(() => (q(`SELECT name FROM stk_items WHERE item_id = ${kopi.id}`) === "Kopi Robusta 250g" ? "ok" : undefined), 15000)) === "ok");
+
+      // Company B: kept apart, and FIFO.
+      res = await admin.call("POST", "/api/v1/organization/companies", { code: "PT-B", name: "PT B", timezone: "Asia/Jakarta" });
+      const cb = res.body?.data?.id;
+      const founder = await waitFor(async () => {
+        const p = await admin.call("GET", "/api/v1/rbac/me", undefined, at(String(cb)));
+        return p.status === 200 && p.body.data.permissions.includes("stock.manage") ? "ok" : undefined;
+      }, 15000);
+      expect("company B, with its creator as Administrator", founder === "ok");
+      const B = String(cb);
+      res = await admin.call("GET", `${S}/balances`, undefined, at(B));
+      expect("B sees none of company 1's stock", res.status === 200 && res.body.meta.total === 0, res.body);
+      expect("…nor its documents (404)", (await admin.call("GET", `${S}/documents/${receipt.id}`, undefined, at(B))).status === 404);
+      res = await admin.call("POST", `${S}/documents`, doc("receipt", "2025-05-01", [{ item_id: kopi.id, unit_code: "PCS", qty: "1", unit_cost: "1" }]), at(B));
+      expect("…nor posts into its warehouse or with its item (422)", res.status === 422, res.body);
+      expect("B chooses FIFO before its first movement", (await admin.call("PUT", `${S}/settings`, { cost_method: "fifo" }, at(B))).status === 200);
+      await admin.call("POST", "/api/v1/items/units/defaults", undefined, at(B));
+      const unitsB = (await admin.call("GET", "/api/v1/items/units", undefined, at(B))).body.data;
+      const kopiB = await item({ name: "Kopi B", kind: "goods", is_stocked: true, base_unit_id: unitsB.find((u) => u.code === "PCS").id }, B);
+      expect("B's codes start at BRG-00001 too", kopiB?.code === "BRG-00001", kopiB);
+      const whB = (await admin.call("POST", `${S}/warehouses`, { code: "GU1", name: "Gudang B" }, at(B))).body?.data?.id;
+      expect("B may use the warehouse code GU1 as well", !!whB);
+      for (const [cost, day] of [["1000", "01"], ["2000", "02"]]) {
+        const x = await draft(admin, doc("receipt", `2025-05-${day}`, [{ item_id: kopiB.id, unit_code: "PCS", qty: "10", unit_cost: cost }], whB), B);
+        await post(admin, x.id, B);
+      }
+      d = await draft(admin, doc("issue", "2025-05-03", [{ item_id: kopiB.id, unit_code: "PCS", qty: "15" }], whB), B);
+      res = await post(admin, d.id, B);
+      expect("FIFO in B: 15 out of 10 @1.000 + 10 @2.000 takes Rp20.000", res.status === 200 && res.body.data.lines[0].value === "-20000.00" && res.body.data.number === "BK/2025/05/0001", res.body);
+      res = await admin.call("POST", `${S}/documents/${d.id}/cancel`, { reason: "salah ambil" }, at(B));
+      expect("…cancelled, both layers are whole again", res.status === 200 &&
+        q(`SELECT GROUP_CONCAT(CONCAT(remaining, '/', remaining_value) ORDER BY id) FROM stk_layers WHERE company_id = ${cb}`) === "10.0000/10000.00,10.0000/20000.00");
+      expect("every stk_ table row carries its company", q("SELECT COUNT(*) FROM stk_moves WHERE company_id NOT IN (1, " + cb + ")") === "0");
+      expect("no panic in either container", !/panic/i.test(api.output() + api2.output()));
+    } finally {
+      stopApi(api);
+      stopApi(api2);
+      api = api2 = undefined;
+      try { mysql(db, `DROP DATABASE IF EXISTS ${name};`); } catch {}
+    }
+  } catch (err) {
+    fail(`inventory: ${err.message}`);
+  } finally {
+    stopApi(api);
+    stopApi(api2);
+    if (!KEEP) {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(lib, { recursive: true, force: true });
+    }
+  }
+}
+
+const scenarios = { full, "no-rbac": noRbac, "auth-alone": authAlone, "users-alone": usersAlone, lifecycle, kernel6, organization, documents, inventory };
 for (const [name, fn] of Object.entries(scenarios)) {
   if (!ONLY || ONLY === name) await fn();
 }
