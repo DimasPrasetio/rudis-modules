@@ -64,10 +64,10 @@ or the testbed's scenarios without touching it.
 
 | | |
 |---|---|
-| Date | 29 October 2026 |
-| Run on | `fe375d5` (kernel 7 pinned) + `mailer` 0.3.1 and `bingkai-navy` 0.2.1 |
+| Date | 30 October 2026 |
+| Run on | `926c8f1` (branch `persediaan`: `costing`, `items`, `stock` 0.1.0 and the `inventory` scenario) |
 | `npm run check` | passes |
-| `npm run testbed` | all 8 scenarios: `All testbed checks passed: 483 checks.` — MySQL 8.0.46 (local), sqlc 1.31.1, Node 20, Go 1.25 |
+| `npm run testbed` | all 9 scenarios: `All testbed checks passed: 557 checks.` — MySQL 8.0.46 (local), sqlc 1.31.1, Node 20, Go 1.25 |
 
 Update this table with every full testbed run you make before a commit: the date, the commit
 you ran it on (`git rev-parse --short HEAD`) plus your change, and the run's last line. When a

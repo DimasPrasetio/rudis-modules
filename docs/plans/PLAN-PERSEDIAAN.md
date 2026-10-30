@@ -376,7 +376,7 @@ di worktree sendiri lalu digabung; `costing` dan `stock` dikerjakan langsung.
   bersih).
 - **Build:** `npm run build:web` (tsc + vite) dan `build:api` lulus.
 - **Testbed `--only inventory`:** `All testbed checks passed: 74 checks (only inventory).`
-  Hasil testbed penuh ada di STATUS.md › Last verified.
+  Testbed penuh pada `926c8f1`: `All testbed checks passed: 557 checks.` (9 skenario).
 - **Verifikasi visual** di sandbox (app-shell, users, auth, rbac, organization, numbering, period,
   items, stock, preset bingkai-navy) dengan data contoh 3 barang, 2 gudang, 3 dokumen:
   - **Desktop 1366 px:** Stok (nilai persediaan Rp3.536.250 cocok dengan hitungan manual),
