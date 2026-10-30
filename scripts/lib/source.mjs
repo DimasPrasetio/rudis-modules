@@ -35,7 +35,9 @@ export function workingTree(libRoot) {
   return {
     label: "working tree",
     exists: (rel) => existsSync(join(libRoot, rel)),
-    read: (rel) => readFileSync(join(libRoot, rel), "utf8"),
+    // LF, as a commit holds it: a checkout with core.autocrlf=true must not install CRLF
+    // (gofmt refuses it, and the file would differ from an install from a commit).
+    read: (rel) => readFileSync(join(libRoot, rel), "utf8").replace(/\r\n/g, "\n"),
     /** Every file under rel, as paths relative to rel. */
     list(rel) {
       const root = join(libRoot, rel);

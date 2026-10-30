@@ -1,2 +1,7 @@
+# LF line endings in every checkout, Windows' core.autocrlf=true included: the catalog, STATUS.md,
+# and module files are compared and hashed as bytes, and gofmt refuses CRLF in the Go files a
+# module installs. Binary files (git's text=auto decides) are left as they are.
+* text=auto eol=lf
+
 # The pinned kernel is hashed byte for byte: check it out with LF line endings everywhere.
 /kernel/** text=auto eol=lf
