@@ -761,6 +761,115 @@
       "listens": []
     },
     {
+      "id": "stock",
+      "version": "0.1.0",
+      "kind": "fullstack",
+      "title": "Stock",
+      "summary": "A company's stock: warehouses (optionally per branch); receipts, issues, and adjustments that go draft → posted → cancelled with gapless numbers (BM/BK/PS) and the period lock; a ledger of every movement with its value by moving average or FIFO (the costing kit), chosen per company and locked once stock moves; balances per item and warehouse that never go negative and are never dated backwards; cancellation by exact reversing rows. Pages for stock on hand, the stock card, and the movement report (opening, in, out, closing). Offers StockLedger so purchasing, sales, and a POS move stock inside their own transaction. Keeps item code and name current from items.item.changed.",
+      "when_to_use": [
+        "The app keeps goods in one or more warehouses and must know what is there and what it is worth: a warehouse log, a shop, a distributor, a kitchen store."
+      ],
+      "when_not_to_use": [
+        "Lots, serial numbers, expiry dates, or rack locations — a later version of this module.",
+        "Transfers between warehouses, stock counts, picking and packing — the stock-transfer, stock-count, and wms modules build on StockLedger.",
+        "Revaluing history after a back-dated movement — not done: movements are dated forward per item and warehouse."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 7,
+      "provides": {
+        "contracts": [
+          "StockLedger"
+        ],
+        "kernel": []
+      },
+      "permissions": [
+        "stock.read",
+        "stock.draft",
+        "stock.post",
+        "stock.cancel",
+        "stock.manage"
+      ],
+      "ports": [
+        {
+          "name": "Items",
+          "required": true,
+          "description": "Find, check, and convert the units of the items stock moves.",
+          "adapters": [
+            "items"
+          ]
+        },
+        {
+          "name": "Numbers",
+          "required": true,
+          "description": "Declare the numbering of receipts, issues, and adjustments and take the next number inside the posting's transaction.",
+          "adapters": [
+            "numbering"
+          ]
+        },
+        {
+          "name": "Periods",
+          "required": false,
+          "description": "Declare the inventory area and refuse postings and cancellations dated in a closed period.",
+          "adapters": [
+            "period"
+          ]
+        },
+        {
+          "name": "Branches",
+          "required": false,
+          "description": "The company's branches a warehouse may belong to; without it every warehouse belongs to the company as a whole.",
+          "adapters": [
+            "organization"
+          ]
+        }
+      ],
+      "ui": [
+        "ui-core",
+        "ui-data",
+        "ui-forms",
+        "ui-feedback"
+      ],
+      "go_kits": [
+        "money",
+        "costing",
+        "docstate"
+      ],
+      "owns_tables": [
+        "stk_settings",
+        "stk_warehouses",
+        "stk_items",
+        "stk_documents",
+        "stk_document_lines",
+        "stk_moves",
+        "stk_balances",
+        "stk_layers",
+        "stk_layer_takes"
+      ],
+      "scoped": true,
+      "emits": [
+        {
+          "name": "stock.document.posted",
+          "version": 1,
+          "description": "A receipt, issue, or adjustment was posted: {id, company_id, kind, number, warehouse_id}."
+        },
+        {
+          "name": "stock.document.cancelled",
+          "version": 1,
+          "description": "A posted document was cancelled and its movements reversed: {id, company_id, kind, number, warehouse_id}."
+        },
+        {
+          "name": "stock.level.changed",
+          "version": 1,
+          "description": "An item's quantity in a warehouse changed: {company_id, warehouse_id, item_id, qty} — qty in the base unit, after the change. Once per item per document or movement."
+        }
+      ],
+      "listens": [
+        "items.item.changed"
+      ]
+    },
+    {
       "id": "suppliers",
       "version": "0.3.0",
       "kind": "fullstack",

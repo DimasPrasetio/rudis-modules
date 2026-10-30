@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS stk_layer_takes;
+DROP TABLE IF EXISTS stk_layers;
+DROP TABLE IF EXISTS stk_balances;
+DROP TABLE IF EXISTS stk_moves;
+DROP TABLE IF EXISTS stk_document_lines;
+DROP TABLE IF EXISTS stk_documents;
+DROP TABLE IF EXISTS stk_items;
+DROP TABLE IF EXISTS stk_warehouses;
+DROP TABLE IF EXISTS stk_settings;
