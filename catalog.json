@@ -153,6 +153,35 @@
       "listens": []
     },
     {
+      "id": "costing",
+      "version": "0.1.0",
+      "kind": "gokit",
+      "title": "Costing (Go kit)",
+      "summary": "Stock valuation by moving average or FIFO — the two methods PSAK 202 and Indonesian tax accept (no LIFO): receive, issue, and undo either one exactly, with a take's value and what stays always adding up to the sen (a position with nothing left is worth nothing), FIFO takes recorded per layer so a cancellation puts goods back where they came from, and unit conversion to the base unit. Pure functions over a position the caller loads and stores.",
+      "when_to_use": [
+        "A module that moves stock and must know what it is worth: the stock ledger, production, a bill of materials."
+      ],
+      "when_not_to_use": [
+        "Selling prices, margins, or landed-cost allocation — price lists and purchasing.",
+        "Specific identification per serial number — it comes with lots and serials in the stock module."
+      ],
+      "stacks": [
+        "go"
+      ],
+      "requires_kernel": 6,
+      "provides": {},
+      "permissions": [],
+      "ports": [],
+      "ui": [],
+      "go_kits": [
+        "money"
+      ],
+      "owns_tables": [],
+      "scoped": false,
+      "emits": [],
+      "listens": []
+    },
+    {
       "id": "customers",
       "version": "0.3.0",
       "kind": "fullstack",
