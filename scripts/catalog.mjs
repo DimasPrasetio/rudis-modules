@@ -194,13 +194,16 @@ const md = [
 
 const json = JSON.stringify(catalog, null, 2) + "\n";
 const statusPath = join(ROOT, "STATUS.md");
-const status = withStatusBlock(existsSync(statusPath) ? readFileSync(statusPath, "utf8") : "", statusBlock(ROOT, modules, presets, pinned));
+// Line endings are not a change: a checkout made before .gitattributes (core.autocrlf=true) holds
+// these files with CRLF and must not look stale.
+const readText = (p) => readFileSync(p, "utf8").replace(/\r\n/g, "\n");
+const status = withStatusBlock(existsSync(statusPath) ? readText(statusPath) : "", statusBlock(ROOT, modules, presets, pinned));
 if (status === undefined) {
   console.error("STATUS.md: status-current: the file or its <!-- rudis:status:begin/end --> markers are missing — restore them");
   process.exit(1);
 }
 if (CHECK) {
-  const stale = [["CATALOG.md", md], ["catalog.json", json], ["STATUS.md", status]].filter(([f, c]) => !existsSync(join(ROOT, f)) || readFileSync(join(ROOT, f), "utf8") !== c);
+  const stale = [["CATALOG.md", md], ["catalog.json", json], ["STATUS.md", status]].filter(([f, c]) => !existsSync(join(ROOT, f)) || readText(join(ROOT, f)) !== c);
   if (stale.length) {
     console.error(`Stale: ${stale.map(([f]) => f).join(", ")} — run node scripts/catalog.mjs`);
     process.exit(1);

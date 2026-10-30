@@ -78,6 +78,17 @@ Read [AGENTS.md](AGENTS.md) first — the architecture is locked, and it lists e
 the check that enforces it. After cloning, enable the pre-commit hook once:
 `git config core.hooksPath .githooks`.
 
+Every checkout has LF line endings (`.gitattributes`), Windows' `core.autocrlf=true` included. A
+checkout made before that rule still holds CRLF files: the check accepts them, but with
+`core.safecrlf=true` git refuses to stage an edited one. Rewrite them once as LF, in each clone
+and worktree. It resets the working tree, so it runs only when no tracked file differs in content
+from the last commit (`git status` may still list files whose line ends alone changed; untracked
+files are kept):
+
+```bash
+git diff --exit-code >/dev/null && git diff --cached --exit-code >/dev/null && git rm -r -q --cached . && git reset --hard
+```
+
 This repository is self-contained: the kernel modules build on is pinned in
 [`kernel/`](kernel/README.md) (a host project from a released rudis-monorepo, its kernel
 references, and a lock of every file's hash). You do not need the skill to develop, try, or

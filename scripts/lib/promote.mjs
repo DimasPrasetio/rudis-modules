@@ -4,16 +4,17 @@
 // use). Refuses a module that imports another module — that has to become a port first.
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { checkModules } from "./rules.mjs";
 
-const read = (p) => readFileSync(p, "utf8");
+// LF, as the library holds it: a project checked out with CRLF must not bring "\r" along.
+const read = (p) => readFileSync(p, "utf8").replace(/\r\n/g, "\n");
 
 function walk(dir) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { recursive: true, withFileTypes: true })
     .filter((e) => e.isFile())
-    .map((e) => relative(dir, join(e.parentPath ?? e.path, e.name)))
+    .map((e) => relative(dir, join(e.parentPath ?? e.path, e.name)).split(sep).join("/"))
     .sort();
 }
 

@@ -185,11 +185,13 @@ export function checkStatusHistory(root, ref, modules, presets, problem) {
   if ([...rules].some((r) => !oldRules.has(r)) || [...oldRules].some((r) => !rules.has(r))) reasons.push("the rules changed");
   const oldTestbed = git(root, ["show", `${ref}:scripts/testbed.mjs`]).stdout ?? "";
   const scenarioTable = (s) => s.match(/const scenarios = \{([^}]*)\}/)?.[1] ?? "";
-  if (scenarioTable(oldTestbed) !== scenarioTable(readFileSync(join(root, "scripts/testbed.mjs"), "utf8"))) reasons.push("the testbed's scenarios changed");
+  // git show gives LF; a checkout with core.autocrlf=true holds CRLF — not a change.
+  const readText = (f) => readFileSync(join(root, f), "utf8").replace(/\r\n/g, "\n");
+  if (scenarioTable(oldTestbed) !== scenarioTable(readText("scripts/testbed.mjs"))) reasons.push("the testbed's scenarios changed");
   if (!reasons.length) return;
 
   const before = git(root, ["show", `${ref}:STATUS.md`]);
-  const now = existsSync(join(root, "STATUS.md")) ? readFileSync(join(root, "STATUS.md"), "utf8") : "";
+  const now = existsSync(join(root, "STATUS.md")) ? readText("STATUS.md") : "";
   const hand = handWritten(now);
   if (before.status === 0 && handWritten(before.stdout) === hand) {
     problem("STATUS.md", `status-current: ${reasons.join("; ")} — update STATUS.md: a Log entry, and Last verified / In progress / Next / Known limits where they moved`);

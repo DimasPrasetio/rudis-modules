@@ -101,8 +101,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.27"
-      # The rules read paths and line ends as Windows writes them (checkout uses CRLF here).
+      # The rules read paths as Windows writes them.
       - run: node scripts/catalog.mjs --check
+      # A checkout made before .gitattributes holds CRLF (core.autocrlf=true): rewrite every file
+      # outside kernel/ that way, then the check must still pass and the sandbox below installs
+      # from it (as LF).
+      - name: the check on a CRLF checkout
+        run: |
+          node -e 'const { execSync } = require("child_process"), fs = require("fs"); for (const f of execSync("git ls-files -z", { encoding: "utf8" }).split("\0")) { if (!f || f.startsWith("kernel/")) continue; const s = fs.readFileSync(f, "utf8"); if (!s.includes("\0")) fs.writeFileSync(f, s.replace(/\r?\n/g, "\r\n")); }'
+          node scripts/catalog.mjs --check
       - name: sqlc
         run: CGO_ENABLED=0 go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 && echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: a project with every Go module

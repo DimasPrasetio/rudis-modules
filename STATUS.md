@@ -112,8 +112,7 @@ fixed; add one when you accept a limit.
   role of the same name, if any).
 - **The testbed does not run on Windows.** It starts `npm` without a shell, which Windows refuses
   (`npm` is `npm.cmd`); run it on macOS or Linux. Windows has `npm run check` and CI's `windows`
-  job (every Go module's unit tests). A checkout with CRLF line ends (`core.autocrlf=true`) also
-  makes `gofmt -l` list every installed Go file.
+  job (every Go module's unit tests).
 - **Testbed flake under load (kernel).** `TestMySQLDedupeQueuesBehindARunningTask` can time out
   when the machine is busy (other MySQL work running). It passes alone; rerun before blaming a
   module.
@@ -146,6 +145,16 @@ fixed; add one when you accept a limit.
 
 Newest first. One entry per change that released something or changed how the library works:
 date, what, the tags it created.
+
+- **31 Oct 2026 — LF line endings on every OS (T-20261030-2.4).**
+  - `.gitattributes`: `* text=auto eol=lf` — a Windows checkout (`core.autocrlf=true`) is LF too,
+    so the catalog, STATUS.md, and module files match byte for byte and installed Go files pass
+    `gofmt -l`.
+  - A checkout made before it still holds CRLF: `npm run check` and the hook no longer read that
+    as stale (catalog, STATUS.md snapshot, status-current), modules install from it as LF, and
+    README.md › Changing the library has the one-time rewrite to LF.
+  - `promote` lists a project's files with `/` on Windows too (it missed `infrastructure/sqlc/`).
+  - Nothing released.
 
 - **30 Oct 2026 — Windows: auth's tests, the check, and a CI job (T-20261030-2.3).**
   - Released: `auth` 0.8.1 — its unit tests read one test clock instead of the wall clock, which
