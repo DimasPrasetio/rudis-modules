@@ -27,4 +27,4 @@ Which module to plan next comes from [ROADMAP.md](../../ROADMAP.md).
 
 | Plan | Modules | Status |
 |---|---|---|
-| [PLAN-PERSEDIAAN.md](PLAN-PERSEDIAAN.md) | `costing`, `items`, `stock` | disetujui, sedang dibangun |
+| [PLAN-PERSEDIAAN.md](PLAN-PERSEDIAAN.md) | `costing`, `items`, `stock` | dibangun — `costing` 0.1.0, `items` 0.1.0, `stock` 0.1.0 |

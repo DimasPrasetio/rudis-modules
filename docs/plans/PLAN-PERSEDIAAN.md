@@ -1,6 +1,6 @@
 # Rencana: persediaan — `costing`, `items`, `stock`
 
-Status: **disetujui maintainer** (Dimas Prasetio, 30 Oktober 2026, semua keputusan D1–D13 sesuai rekomendasi) · branch `persediaan` · ROADMAP #44, #37, #47.
+Status: **dibangun** — disetujui maintainer (Dimas Prasetio, 30 Oktober 2026, semua keputusan D1–D13 sesuai rekomendasi); `costing` 0.1.0, `items` 0.1.0, `stock` 0.1.0 di branch `persediaan` · ROADMAP #44, #37, #47.
 
 ## 1. Tujuan dan batas
 
@@ -304,4 +304,90 @@ Brief (dari riset 30 Oktober 2026):
 
 ## 9. Hasil pembangunan
 
-_Diisi setelah membangun._
+Dibangun 30 Oktober 2026 di branch `persediaan`. `items` dikerjakan Software Engineer (subagent)
+di worktree sendiri lalu digabung; `costing` dan `stock` dikerjakan langsung.
+
+### Yang dibangun
+
+| Modul | Isi |
+|---|---|
+| `costing` 0.1.0 | `Receive`, `Issue`, `Unreceive`, `Unissue`, `UnitCost`, `Convert`, `ParseMethod`; nilai pengambilan sebagian dibagi `money.Allocate` (tanpa sisa sen); 8 tes unit |
+| `items` 0.1.0 | 5 tabel § 3.2, kode otomatis `BRG-00001`, satuan & konversi, satuan umum dengan kode UM Coretax, kategori, barcode unik, field tetap (jenis, dilacak stok, satuan dasar), PUT sebagian, event `items.item.*`, `ItemCatalog`; halaman `/items`, `/items/:id`; 12 tes unit |
+| `stock` 0.1.0 | 9 tabel, dokumen draf → posting → batal → koreksi, buku besar bernilai, saldo, lapisan FIFO, kartu stok, laporan mutasi, `StockLedger`, 4 port, 6 halaman; 10 tes unit |
+| Testbed | skenario baru `inventory` (74 cek) |
+
+### Penyimpangan dari rencana, dengan alasan
+
+- **Kontrak `ItemCatalog`** mendapat `Unit.Name`, `Unit.IsBase`, dan metode `Units()`. Alasannya,
+  form dokumen stok perlu daftar satuan barang lewat port `stock`, bukan memanggil API `items`
+  dari web modul lain.
+- **Port opsional `Branches` (→ `organization`)** di `stock`. Tanpanya D12 hanya bisa diisi lewat
+  API: dialog gudang tidak bisa menampilkan daftar cabang. Tanpa `organization` field cabang
+  disembunyikan dan gudang berlaku untuk seluruh perusahaan.
+- **Tabel `stk_items`**: salinan kode/nama barang untuk pencarian dan urutan di daftar stok,
+  kartu stok, dan laporan. Diperbarui saat barang dipakai di dokumen dan dari event
+  `items.item.changed` (`listens`). Ini bukan sumber kebenaran; port `Items` tetap sumbernya.
+- **Kolom tambahan**:
+  - `stk_settings.locked` menyimpan kunci metode (D2) secara eksplisit.
+  - `stk_moves.source` dipakai `StockLedger.Reverse` untuk mutasi yang diposting modul lain.
+  - `stk_moves.reversed_by` menandai baris yang sudah dibalik.
+- **`Movement.UnitCost`** di kontrak `StockLedger` dihitung per satuan dasar. `nil` berarti
+  memakai biaya rata-rata saat ini, misalnya untuk retur barang yang tadinya keluar.
+- **`items`**:
+  - Satuan dan kategori dinonaktifkan lewat `PUT …/units/{id}` dan `PUT …/categories/{id}`
+    dengan `is_active`.
+  - `{uid}` di `POST /items/{id}/units/{uid}/deactivate` adalah id baris satuan alternatif.
+  - Izin `items.*` tidak per cabang. Hanya awalan kode yang butuh `items.manage` di seluruh
+    perusahaan, seperti di `customers`.
+
+### Temuan dan perbaikan
+
+- **Tes unit `stock`: tanda kuantitas pengeluaran.** Baris pengeluaran diisi jumlah positif,
+  tetapi `BaseQty` belum dibalik, sehingga diposting sebagai barang masuk. Diperbaiki di
+  `prepare`: pengeluaran selalu negatif di satuan dasar. Penentuan barang masuk di `Post` kini
+  memakai tanda `BaseQty`.
+- **sqlc.**
+  - Satu argumen tidak boleh punya dua tipe. Filter tanggal dokumen kini selalu dikirim sebagai
+    rentang, dan pencarian nomor (`NULL`) memakai argumen sendiri.
+  - `COALESCE` di atas `LEFT JOIN` menjadi `interface{}`. Nomor dokumen di kartu stok kini
+    diambil dengan query terpisah (BUILDING_MODULES § 6).
+- **Verifikasi visual.** Lima perbaikan:
+  - total nilai di daftar dokumen yang tadinya kosong;
+  - nilai pengeluaran tampil tanpa tanda minus;
+  - lebar pemilih gudang di toolbar;
+  - petunjuk biaya sesuai jenis dokumen;
+  - penjaga perubahan yang terpicu oleh satuan yang dimuat atau gudang yang dipilih otomatis.
+
+### Batas yang diterima (STATUS.md › Known limits)
+
+- **Tidak ada posting mundur dan tidak ada hitung ulang valuasi (D4).** Pembatalan hanya untuk
+  mutasi terakhir (D5); selebihnya dikoreksi dengan dokumen penyesuaian.
+- **Menonaktifkan barang di `items` tidak memeriksa stok yang tersisa**, karena `items` tidak
+  tahu stok. `stock` menolak barang nonaktif saat posting, sehingga sisa stok barang nonaktif
+  hanya bisa dikeluarkan setelah barang diaktifkan lagi.
+- **`MoneyInput` (ui-forms) menampilkan faktor satuan dengan 10 desimal penuh setelah blur.**
+  Nilai yang dikirim tetap benar. Perbaikannya berupa opsi baru di kit, dalam perubahan
+  tersendiri.
+- **Mode gelap belum diperiksa.** Preset `bingkai-navy` belum punya tema gelap.
+
+### Bukti
+
+- **Tes unit:** `costing`, `items`, `stock` lulus di sandbox (`go test`, `go vet`, `gofmt`
+  bersih).
+- **Build:** `npm run build:web` (tsc + vite) dan `build:api` lulus.
+- **Testbed `--only inventory`:** `All testbed checks passed: 74 checks (only inventory).`
+  Hasil testbed penuh ada di STATUS.md › Last verified.
+- **Verifikasi visual** di sandbox (app-shell, users, auth, rbac, organization, numbering, period,
+  items, stock, preset bingkai-navy) dengan data contoh 3 barang, 2 gudang, 3 dokumen:
+  - **Desktop 1366 px:** Stok (nilai persediaan Rp3.536.250 cocok dengan hitungan manual),
+    Dokumen stok, dokumen terposting (penerimaan dan pengeluaran), draf penyesuaian, form
+    penerimaan baru, Kartu stok, Laporan mutasi, Gudang (metode terkunci).
+  - **HP 375 px:** daftar stok berupa kartu, form dokumen dengan baris bertumpuk, tanpa scroll
+    horizontal (`scrollWidth` = 375).
+  - **Keyboard:** fokus tampak sebagai bingkai `--ring`. Kirim form kosong memunculkan
+    `ErrorSummary` di atas, dengan setiap butir menaut ke field-nya, dan pesan di samping field.
+  - **Konsol:** tidak ada galat JavaScript. Yang muncul hanya 401 sebelum masuk, 422 yang memang
+    diuji, dan peringatan `beforeunload` sebelum perbaikan penjaga perubahan; sesudahnya
+    `beforeunload` tidak lagi terpicu pada draf yang belum disentuh.
+  - **`items`** diperiksa oleh Software Engineer: daftar, form, detail, dialog satuan pada 1366 px
+    dan 375 px, konsol bersih.

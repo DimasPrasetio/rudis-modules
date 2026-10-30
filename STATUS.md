@@ -75,8 +75,7 @@ check fails, say so here rather than leaving the last good run standing.
 
 ## In progress
 
-- **Persediaan: `costing`, `items`, `stock`** — Dimas Prasetio with Claude, branch `persediaan`,
-  plan [docs/plans/PLAN-PERSEDIAAN.md](docs/plans/PLAN-PERSEDIAAN.md) (approved 30 Oct 2026; building).
+Nothing is being built.
 
 When you start a module (on its branch — [docs/BUILDING_MODULES.md](docs/BUILDING_MODULES.md)
 › Working across several commits), add a line here: what, who, the branch, and the plan in
@@ -130,12 +129,28 @@ fixed; add one when you accept a limit.
 - **NPWP check digit is unofficial (`taxid`).** DJP has not published it: a mismatch only warns.
   Whether a number is registered, or a party is a PKP, is not checked (Coretax only).
 - **Addresses are free text (`customers`, `suppliers`).** No Kemendagri region codes yet.
+- **Stock is never dated backwards (`stock`).** A movement dated before an item's last movement in
+  a warehouse is refused, and a posted document is cancelled only while it is still the latest
+  movement of each of its items there; history is never revalued. Correct older mistakes with
+  an adjustment.
+- **Deactivating an item does not look at its stock (`items`).** Items cannot see stock; stock
+  refuses an inactive item, so what is left of it moves out only after it is activated again.
+- **Unit factors show all ten decimals (`items` → `ui-forms`).** `MoneyInput` pads to
+  `fractionDigits` on blur ("12,0000000000"); the value sent is right. A kit option fixes it.
 
 ## Log
 
 Newest first. One entry per change that released something or changed how the library works:
 date, what, the tags it created.
 
+- **30 Oct 2026 — persediaan: barang masuk, keluar, dan stok (ROADMAP.md #37, #44, #47; plan
+  [PLAN-PERSEDIAAN.md](docs/plans/PLAN-PERSEDIAAN.md)).**
+  - Released: `costing` 0.1.0 (moving average and FIFO, exact undo), `items` 0.1.0 (items and
+    services, units and conversions, Coretax codes optional, `ItemCatalog`), `stock` 0.1.0
+    (warehouses, receipts, issues, adjustments, a valued ledger, stock card, movement report,
+    `StockLedger`).
+  - Testbed: new scenario `inventory` (ports 18103–18104).
+  - Tags on merge: `costing/v0.1.0`, `items/v0.1.0`, `stock/v0.1.0`.
 - **29 Oct 2026 — kernel request 0001 answered by kernel 7 (ROADMAP.md › 0.18, rudis-modules#1).**
   - Released: `mailer` 0.3.1 (requires kernel 7: `kernel.CompanyOf` instead of recovering from
     `ScopeFrom`'s panic), `bingkai-navy` 0.2.1 (its Button focus rule kept for projects on
