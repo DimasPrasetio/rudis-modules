@@ -81,11 +81,12 @@ the check that enforces it. After cloning, enable the pre-commit hook once:
 Every checkout has LF line endings (`.gitattributes`), Windows' `core.autocrlf=true` included. A
 checkout made before that rule still holds CRLF files: the check accepts them, but with
 `core.safecrlf=true` git refuses to stage an edited one. Rewrite them once as LF, in each clone
-and worktree. It resets the working tree, so it runs only when nothing tracked is uncommitted
-(untracked files are kept):
+and worktree. It resets the working tree, so it runs only when no tracked file differs in content
+from the last commit (`git status` may still list files whose line ends alone changed; untracked
+files are kept):
 
 ```bash
-test -z "$(git status --porcelain --untracked-files=no)" && git rm -r -q --cached . && git reset --hard
+git diff --exit-code >/dev/null && git diff --cached --exit-code >/dev/null && git rm -r -q --cached . && git reset --hard
 ```
 
 This repository is self-contained: the kernel modules build on is pinned in
