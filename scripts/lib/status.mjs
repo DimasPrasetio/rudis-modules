@@ -39,7 +39,7 @@ export function testbedScenarios(root, modules) {
   const header = src.slice(0, src.indexOf("// Each:"));
   const described = new Map();
   let last;
-  for (const line of header.split("\n")) {
+  for (const line of header.split(/\r?\n/)) {
     const named = line.match(/^\/\/ {3}([a-z0-9-]+) +(.+)$/);
     const more = line.match(/^\/\/ {4,}(\S.*)$/);
     if (named) described.set((last = named[1]), named[2].trim());

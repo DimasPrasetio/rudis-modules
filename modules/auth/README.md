@@ -87,6 +87,11 @@ for several replicas, a list of one's sessions.
 
 ## Changes
 
+- **0.8.1** — The unit tests pass on Windows: the full service's tests and their fake store read
+  one test clock that moves only when the test says, instead of the wall clock (Windows' moves in
+  steps of about a millisecond, so a sign-in right after a password change landed on the same
+  instant and was rightly refused). A new test pins that rule: a sign-in checked at the instant of
+  a password change gets no session, on every OS. The module's code is unchanged.
 - **0.8.0** — Sign-in limits slow guessing down instead of locking accounts: free attempts, then
   a doubling wait with a cap per key (table above), `429` with `Retry-After`; a successful
   sign-in no longer counts against its address (an office behind one NAT was locked out at the

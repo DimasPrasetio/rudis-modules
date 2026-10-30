@@ -190,7 +190,7 @@ modulnya ditulis.
 
 | Status | Modul | Jenis | Menyediakan |
 |---|---|---|---|
-| ✅ 0.8.0 | `auth` | fullstack | login email + sandi, sesi server |
+| ✅ 0.8.1 | `auth` | fullstack | login email + sandi, sesi server |
 | ✅ 0.9.0 | `users` | fullstack | kontrak `UserClient` |
 | ✅ 0.7.0 | `rbac` | fullstack | peran & izin per perusahaan/cabang; kontrak `RoleHolders` |
 | ✅ 0.2.0 | `organization` | fullstack | `OrganizationClient`; event `organization.company.created`, `organization.user.unplaced` |
