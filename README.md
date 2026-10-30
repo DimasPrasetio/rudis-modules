@@ -79,11 +79,13 @@ the check that enforces it. After cloning, enable the pre-commit hook once:
 `git config core.hooksPath .githooks`.
 
 Every checkout has LF line endings (`.gitattributes`), Windows' `core.autocrlf=true` included. A
-checkout made before that rule still holds CRLF files: the check accepts them, but rewrite them
-once as LF — with nothing uncommitted (`git status` clean), since this resets the working tree:
+checkout made before that rule still holds CRLF files: the check accepts them, but with
+`core.safecrlf=true` git refuses to stage an edited one. Rewrite them once as LF, in each clone
+and worktree. It resets the working tree, so it runs only when nothing tracked is uncommitted
+(untracked files are kept):
 
 ```bash
-git rm -r -q --cached . && git reset --hard
+test -z "$(git status --porcelain --untracked-files=no)" && git rm -r -q --cached . && git reset --hard
 ```
 
 This repository is self-contained: the kernel modules build on is pinned in

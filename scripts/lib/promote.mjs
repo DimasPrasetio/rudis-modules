@@ -7,7 +7,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { dirname, join, relative, sep } from "node:path";
 import { checkModules } from "./rules.mjs";
 
-const read = (p) => readFileSync(p, "utf8");
+// LF, as the library holds it: a project checked out with CRLF must not bring "\r" along.
+const read = (p) => readFileSync(p, "utf8").replace(/\r\n/g, "\n");
 
 function walk(dir) {
   if (!existsSync(dir)) return [];
