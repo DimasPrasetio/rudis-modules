@@ -106,21 +106,23 @@ export default function StockPage() {
           }
           primary={
             <>
-              <NativeSelect
-                aria-label="Gudang"
-                value={String(warehouse)}
-                onChange={(e) => {
-                  setPage(1);
-                  setWarehouse(Number(e.target.value));
-                }}
-              >
-                <NativeSelectOption value="0">Semua gudang</NativeSelectOption>
-                {(warehouses.data ?? []).map((w) => (
-                  <NativeSelectOption key={w.id} value={String(w.id)}>
-                    {w.code} — {w.name}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+              <div className="w-full sm:w-64">
+                <NativeSelect
+                  aria-label="Gudang"
+                  value={String(warehouse)}
+                  onChange={(e) => {
+                    setPage(1);
+                    setWarehouse(Number(e.target.value));
+                  }}
+                >
+                  <NativeSelectOption value="0">Semua gudang</NativeSelectOption>
+                  {(warehouses.data ?? []).map((w) => (
+                    <NativeSelectOption key={w.id} value={String(w.id)}>
+                      {w.code} — {w.name}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </div>
               <Segmented
                 aria-label="Tampilkan"
                 options={[

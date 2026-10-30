@@ -236,7 +236,7 @@ func (r *Repository) Documents(ctx context.Context, company int64, f application
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := r.q(ctx).CountDocuments(ctx, sqlc.CountDocumentsParams{CompanyID: company, Kind: f.Kind, Status: f.Status, WarehouseID: f.WarehouseID,
+	count, err := r.q(ctx).CountDocuments(ctx, sqlc.CountDocumentsParams{CompanyID: company, Kind: f.Kind, Status: f.Status, WarehouseID: f.WarehouseID,
 		DateFrom: timeOf(f.From), DateTo: timeOf(f.To), Search: f.Search, NumberLike: numberLike})
 	if err != nil {
 		return nil, 0, err
@@ -247,9 +247,13 @@ func (r *Repository) Documents(ctx context.Context, company int64, f application
 			DocDate: row.DocDate, Number: row.Number, Counterparty: row.Counterparty, Reference: row.Reference, Notes: row.Notes, Status: row.Status,
 			PostedAt: row.PostedAt, PostedBy: row.PostedBy, CancelledAt: row.CancelledAt, CancelledBy: row.CancelledBy, CancelReason: row.CancelReason,
 			AmendedFrom: row.AmendedFrom, Revision: row.Revision, CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt, UpdatedBy: row.UpdatedBy, UpdatedAt: row.UpdatedAt})
-		out[i] = application.DocRow{Document: d, WarehouseCode: row.WarehouseCode, WarehouseName: row.WarehouseName}
+		total, err := money.ParseAmount(text(row.TotalValue))
+		if err != nil {
+			return nil, 0, err
+		}
+		out[i] = application.DocRow{Document: d, WarehouseCode: row.WarehouseCode, WarehouseName: row.WarehouseName, TotalValue: total}
 	}
-	return out, total, nil
+	return out, count, nil
 }
 
 func (r *Repository) Document(ctx context.Context, company, id int64, forUpdate bool) (domain.Document, error) {

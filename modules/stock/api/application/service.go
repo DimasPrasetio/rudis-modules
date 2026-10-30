@@ -123,6 +123,7 @@ type DocRow struct {
 	domain.Document
 	WarehouseCode string
 	WarehouseName string
+	TotalValue    money.Amount // what its lines added or took when posted; 0 for a draft
 }
 
 // BalanceFilter is a page of the stock list.

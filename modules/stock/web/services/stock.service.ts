@@ -18,7 +18,7 @@ import type {
 
 const BASE = "/api/v1/stock";
 
-const data = <T,>(p: Promise<{ data: ApiSuccess<T> }>) => p.then((r) => r.data.data);
+const data = <T>(p: Promise<{ data: ApiSuccess<T> }>) => p.then((r) => r.data.data);
 
 export const fetchSettings = (signal?: AbortSignal) => data<Settings>(httpClient.get(`${BASE}/settings`, { signal }));
 export const saveCostMethod = (cost_method: CostMethod) => data<Settings>(httpClient.put(`${BASE}/settings`, { cost_method }));

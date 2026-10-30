@@ -15,7 +15,7 @@ import { useCan } from "@/shared/access";
 import { useResource } from "@/shared/hooks/use-resource";
 import { DocumentStatusBadge } from "@/modules/stock/components/DocumentStatusBadge";
 import { listDocuments, listWarehouses } from "@/modules/stock/services/stock.service";
-import { KIND_SHORT, STATUS_LABEL, formatDay, formatRp } from "@/modules/stock/types/stock";
+import { KIND_SHORT, STATUS_LABEL, formatDay, formatRp, unsigned } from "@/modules/stock/types/stock";
 import type { DocKind, DocStatus, StockDocument } from "@/modules/stock/types/stock";
 
 const KINDS: { value: DocKind | ""; label: string }[] = [
@@ -63,7 +63,12 @@ export default function DocumentsPage() {
         </div>
       ),
     },
-    { header: "Nilai", width: 150, align: "right", render: (d) => <span className="tabular">{d.status === "draft" ? "–" : formatRp(d.total_value)}</span> },
+    {
+      header: "Nilai",
+      width: 150,
+      align: "right",
+      render: (d) => <span className="tabular">{d.status === "draft" ? "–" : formatRp(d.kind === "issue" ? unsigned(d.total_value) : d.total_value)}</span>,
+    },
     { header: "Status", width: 120, render: (d) => <DocumentStatusBadge status={d.status} /> },
   ];
 

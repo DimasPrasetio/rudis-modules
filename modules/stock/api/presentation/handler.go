@@ -544,6 +544,7 @@ func (h *Handler) documents(w http.ResponseWriter, r *http.Request) {
 	out := make([]documentDTO, len(rows))
 	for i, row := range rows {
 		out[i] = toDocumentDTO(row.Document, row.WarehouseCode, row.WarehouseName)
+		out[i].TotalValue = row.TotalValue
 	}
 	response.Paginated(w, "Dokumen stok", out, pagination.NewMeta(p, total))
 }

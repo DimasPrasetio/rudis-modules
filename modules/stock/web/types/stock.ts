@@ -212,6 +212,9 @@ export function formatDay(iso: string | null | undefined): string {
   return `${d}/${m}/${y}`;
 }
 
+/** A decimal string without its sign — an issue's value, whose direction the kind already says. */
+export const unsigned = (v: string | null | undefined) => (v == null ? v : v.replace(/^-/, ""));
+
 /** Whether a decimal string is negative ("-2.5"). */
 export const isNegative = (v: string | null | undefined) => !!v && v.startsWith("-") && /[1-9]/.test(v);
 

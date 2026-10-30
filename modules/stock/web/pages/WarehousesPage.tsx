@@ -162,7 +162,9 @@ export default function WarehousesPage() {
         open={toggling !== null}
         onOpenChange={(o) => !o && setToggling(null)}
         title={toggling?.is_active ? `Nonaktifkan gudang ${toggling?.code}?` : `Aktifkan gudang ${toggling?.code}?`}
-        description={toggling?.is_active ? "Gudang nonaktif tidak bisa dipilih di dokumen baru. Gudang yang masih berisi stok tidak bisa dinonaktifkan." : undefined}
+        description={
+          toggling?.is_active ? "Gudang nonaktif tidak bisa dipilih di dokumen baru. Gudang yang masih berisi stok tidak bisa dinonaktifkan." : undefined
+        }
         confirmLabel={toggling?.is_active ? "Nonaktifkan" : "Aktifkan"}
         tone={toggling?.is_active ? "danger" : "primary"}
         onConfirm={async () => {

@@ -43,7 +43,7 @@ import {
   postDocument,
   updateDocument,
 } from "@/modules/stock/services/stock.service";
-import { KIND_LABEL, formatDay, formatQty, formatRp } from "@/modules/stock/types/stock";
+import { KIND_LABEL, formatDay, formatQty, formatRp, unsigned } from "@/modules/stock/types/stock";
 import type { DocKind, DocLine, DocumentValues, LineValues, StockDocument } from "@/modules/stock/types/stock";
 
 const COUNTERPARTY_LABEL: Record<DocKind, string> = {
@@ -81,8 +81,18 @@ export default function DocumentPage() {
   const [search] = useSearchParams();
   const doc = useResource((signal) => (docId ? fetchDocument(docId, signal) : Promise.resolve(null)), [docId]);
 
-  if (docId && doc.loading && !doc.data) return <Page><DetailSkeleton /></Page>;
-  if (docId && doc.error) return <Page><ErrorState message={doc.error} onRetry={doc.reload} /></Page>;
+  if (docId && doc.loading && !doc.data)
+    return (
+      <Page>
+        <DetailSkeleton />
+      </Page>
+    );
+  if (docId && doc.error)
+    return (
+      <Page>
+        <ErrorState message={doc.error} onRetry={doc.reload} />
+      </Page>
+    );
   const d = doc.data;
   if (d && !(d.status === "draft" && d.can_edit)) return <DocumentView doc={d} onChanged={doc.reload} />;
   const kind = (d?.kind ?? search.get("kind") ?? "receipt") as DocKind;
@@ -99,16 +109,22 @@ function DocumentForm({ doc, kind, onSaved }: { doc?: StockDocument; kind: DocKi
     [doc, kind],
   );
   const [values, setValues] = useState<DocumentValues>(initial);
+  // What "unchanged" means: the loaded document, plus defaults the page filled in by itself.
+  const [baseline, setBaseline] = useState<DocumentValues>(initial);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"save" | "post" | null>(null);
   const [confirmPost, setConfirmPost] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const dirty = JSON.stringify(values) !== JSON.stringify(initial);
+  const comparable = (v: DocumentValues) => JSON.stringify({ ...v, lines: v.lines.map(({ units: _units, ...l }) => l) });
+  const dirty = comparable(values) !== comparable(baseline);
 
   const active = (warehouses.data ?? []).filter((w) => w.is_active || w.id === values.warehouse_id);
   useEffect(() => {
-    if (!values.warehouse_id && active.length === 1) setValues((v) => ({ ...v, warehouse_id: active[0].id }));
+    if (!values.warehouse_id && active.length === 1) {
+      setValues((v) => ({ ...v, warehouse_id: active[0].id }));
+      setBaseline((v) => ({ ...v, warehouse_id: active[0].id }));
+    }
   }, [active, values.warehouse_id]);
 
   // An existing draft's lines carry only the unit they use: load each item's units once.
@@ -125,7 +141,10 @@ function DocumentForm({ doc, kind, onSaved }: { doc?: StockDocument; kind: DocKi
     return () => ctl.abort();
   }, [doc]);
 
-  const set = <K extends keyof DocumentValues>(k: K) => (v: DocumentValues[K]) => setValues((s) => ({ ...s, [k]: v }));
+  const set =
+    <K extends keyof DocumentValues>(k: K) =>
+    (v: DocumentValues[K]) =>
+      setValues((s) => ({ ...s, [k]: v }));
   const setLine = (key: string, patch: Partial<LineValues>) =>
     setValues((s) => ({ ...s, lines: s.lines.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
 
@@ -170,7 +189,14 @@ function DocumentForm({ doc, kind, onSaved }: { doc?: StockDocument; kind: DocKi
   }
 
   const labels = useMemo(() => {
-    const out: Record<string, string> = { warehouse_id: "Gudang", date: "Tanggal", counterparty: COUNTERPARTY_LABEL[kind], reference: "Referensi", notes: "Catatan", lines: "Barang" };
+    const out: Record<string, string> = {
+      warehouse_id: "Gudang",
+      date: "Tanggal",
+      counterparty: COUNTERPARTY_LABEL[kind],
+      reference: "Referensi",
+      notes: "Catatan",
+      lines: "Barang",
+    };
     values.lines.forEach((_, i) => {
       out[`lines.${i}.item_id`] = `Baris ${i + 1}: barang`;
       out[`lines.${i}.unit_code`] = `Baris ${i + 1}: satuan`;
@@ -232,7 +258,16 @@ function DocumentForm({ doc, kind, onSaved }: { doc?: StockDocument; kind: DocKi
           </FieldGrid>
         </SectionCard>
 
-        <SectionCard title="Barang" description={showCost ? "Biaya per satuan yang dipilih. Centang \"Tanpa biaya\" untuk bonus atau hibah." : undefined}>
+        <SectionCard
+          title="Barang"
+          description={
+            kind === "receipt"
+              ? 'Biaya per satuan yang dipilih. Centang "Tanpa biaya" untuk bonus atau hibah.'
+              : kind === "adjustment"
+                ? "Barang yang ditambahkan tanpa biaya dinilai dengan biaya rata-rata saat ini."
+                : undefined
+          }
+        >
           {errors.lines && <p className="mb-3 text-sm text-destructive">{errors.lines}</p>}
           <LineItemsEditor
             lines={values.lines}
@@ -253,10 +288,26 @@ function DocumentForm({ doc, kind, onSaved }: { doc?: StockDocument; kind: DocKi
                     selectedOption={l.item ? { value: l.item.id, label: `${l.item.code} — ${l.item.name}` } : null}
                     placeholder="Cari barang…"
                     loadOptions={async (q, signal) =>
-                      (await lookupItems(q, signal)).map((it) => ({ value: it.id, label: `${it.code} — ${it.name}`, description: `Satuan dasar ${it.base_unit}`, searchText: it.code }))
+                      (await lookupItems(q, signal)).map((it) => ({
+                        value: it.id,
+                        label: `${it.code} — ${it.name}`,
+                        description: `Satuan dasar ${it.base_unit}`,
+                        searchText: it.code,
+                      }))
                     }
                     onChange={(v, opt) =>
-                      void pickItem(l.key, v && opt ? { id: Number(v), code: opt.label.split(" — ")[0], name: opt.label.split(" — ").slice(1).join(" — "), base_unit: "", is_active: true } : null)
+                      void pickItem(
+                        l.key,
+                        v && opt
+                          ? {
+                              id: Number(v),
+                              code: opt.label.split(" — ")[0],
+                              name: opt.label.split(" — ").slice(1).join(" — "),
+                              base_unit: "",
+                              is_active: true,
+                            }
+                          : null,
+                      )
                     }
                   />
                 ),
@@ -343,7 +394,9 @@ function DocumentForm({ doc, kind, onSaved }: { doc?: StockDocument; kind: DocKi
           {values.lines.some((_, i) => err(i, "item_id") || err(i, "unit_code") || err(i, "qty") || err(i, "unit_cost")) && (
             <ul className="mt-3 grid gap-1 text-sm text-destructive">
               {values.lines.flatMap((_, i) =>
-                ["item_id", "unit_code", "qty", "unit_cost"].filter((f) => err(i, f)).map((f) => <li key={`${i}-${f}`}>{`${labels[`lines.${i}.${f}`]} — ${err(i, f)}`}</li>),
+                ["item_id", "unit_code", "qty", "unit_cost"]
+                  .filter((f) => err(i, f))
+                  .map((f) => <li key={`${i}-${f}`}>{`${labels[`lines.${i}.${f}`]} — ${err(i, f)}`}</li>),
               )}
             </ul>
           )}
@@ -442,8 +495,23 @@ function DocumentView({ doc, onChanged }: { doc: StockDocument; onChanged: () =>
         </span>
       ),
     },
-    { header: "Biaya per satuan", width: 160, align: "right", mobileHidden: true, render: (l) => <span className="tabular">{l.zero_cost ? "Tanpa biaya" : formatRp(l.unit_cost)}</span> },
-    ...(showCost ? [{ header: "Nilai", width: 160, align: "right" as const, render: (l: DocLine) => <span className="tabular font-medium">{formatRp(l.value)}</span> }] : []),
+    {
+      header: "Biaya per satuan",
+      width: 160,
+      align: "right",
+      mobileHidden: true,
+      render: (l) => <span className="tabular">{l.zero_cost ? "Tanpa biaya" : formatRp(l.unit_cost)}</span>,
+    },
+    ...(showCost
+      ? [
+          {
+            header: "Nilai",
+            width: 160,
+            align: "right" as const,
+            render: (l: DocLine) => <span className="tabular font-medium">{formatRp(doc.kind === "issue" ? unsigned(l.value) : l.value)}</span>,
+          },
+        ]
+      : []),
   ];
 
   async function amend() {
@@ -501,13 +569,27 @@ function DocumentView({ doc, onChanged }: { doc: StockDocument; onChanged: () =>
             { label: "Diposting", value: doc.posted_at ? formatDateTime(doc.posted_at) : "–" },
             {
               label: "Mengoreksi",
-              value: doc.amended_from ? <Link className="text-primary underline-offset-4 hover:underline" to={`/stock/documents/${doc.amended_from}`}>Dokumen asal</Link> : "–",
+              value: doc.amended_from ? (
+                <Link className="text-primary underline-offset-4 hover:underline" to={`/stock/documents/${doc.amended_from}`}>
+                  Dokumen asal
+                </Link>
+              ) : (
+                "–"
+              ),
             },
             ...(doc.notes ? [{ label: "Catatan", value: doc.notes, wide: true }] : []),
           ]}
         />
       </SectionCard>
-      <SectionCard title="Barang" flush actions={doc.status !== "draft" && <span className="tabular text-sm font-medium">Total {formatRp(doc.total_value)}</span>}>
+      <SectionCard
+        title="Barang"
+        flush
+        actions={
+          doc.status !== "draft" && (
+            <span className="tabular text-sm font-medium">Total {formatRp(doc.kind === "issue" ? unsigned(doc.total_value) : doc.total_value)}</span>
+          )
+        }
+      >
         <DataTable columns={columns} rows={doc.lines} rowKey={(l) => l.id} caption="Barang di dokumen ini" emptyTitle="Tidak ada barang" />
       </SectionCard>
       <ReasonDialog

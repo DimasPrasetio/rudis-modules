@@ -70,7 +70,13 @@ export default function MovementReportPage() {
           <FormField label="Barang" name="q">
             <SearchInput value={query} placeholder="Kode atau nama…" onSearch={setQuery} />
           </FormField>
-          <DateRangePicker from={range.from} to={range.to} onChange={(r) => r.from && r.to && setRange({ from: r.from, to: r.to })} fromName="from" toName="to" />
+          <DateRangePicker
+            from={range.from}
+            to={range.to}
+            onChange={(r) => r.from && r.to && setRange({ from: r.from, to: r.to })}
+            fromName="from"
+            toName="to"
+          />
         </div>
       </SectionCard>
       <section className="overflow-hidden rounded-xl border border-border bg-card">

@@ -50,7 +50,9 @@ ON DUPLICATE KEY UPDATE code = VALUES(code), name = VALUES(name), base_unit = VA
 UPDATE stk_items SET code = ?, name = ?, updated_at = ? WHERE company_id = ? AND item_id = ?;
 
 -- name: ListDocuments :many
-SELECT d.*, w.code AS warehouse_code, w.name AS warehouse_name
+SELECT d.*, w.code AS warehouse_code, w.name AS warehouse_name,
+  (SELECT CAST(COALESCE(SUM(l.value), 0) AS CHAR) FROM stk_document_lines l
+   WHERE l.company_id = d.company_id AND l.document_id = d.id) AS total_value
 FROM stk_documents d JOIN stk_warehouses w ON w.id = d.warehouse_id AND w.company_id = d.company_id
 WHERE d.company_id = sqlc.arg(company_id)
   AND (sqlc.arg(kind) = '' OR d.kind = sqlc.arg(kind))

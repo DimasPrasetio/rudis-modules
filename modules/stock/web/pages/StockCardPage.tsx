@@ -77,7 +77,13 @@ export default function StockCardPage() {
               ))}
             </NativeSelect>
           </FormField>
-          <DateRangePicker from={range.from} to={range.to} onChange={(r) => r.from && r.to && setRange({ from: r.from, to: r.to })} fromName="from" toName="to" />
+          <DateRangePicker
+            from={range.from}
+            to={range.to}
+            onChange={(r) => r.from && r.to && setRange({ from: r.from, to: r.to })}
+            fromName="from"
+            toName="to"
+          />
         </div>
       </SectionCard>
       {card.error ? (
@@ -93,7 +99,10 @@ export default function StockCardPage() {
                 {c.openings.length === 0
                   ? `0 ${unit}`
                   : c.openings
-                      .map((o) => `${formatQty(o.qty)} ${unit} (${formatRp(o.value)})${warehouse ? "" : ` di ${warehouses.data?.find((w) => w.id === o.warehouse_id)?.code ?? "#" + o.warehouse_id}`}`)
+                      .map(
+                        (o) =>
+                          `${formatQty(o.qty)} ${unit} (${formatRp(o.value)})${warehouse ? "" : ` di ${warehouses.data?.find((w) => w.id === o.warehouse_id)?.code ?? "#" + o.warehouse_id}`}`,
+                      )
                       .join(", ")}
               </span>
             )
