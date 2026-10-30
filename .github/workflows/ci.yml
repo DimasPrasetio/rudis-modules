@@ -101,6 +101,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.27"
+      # The rules read paths and line ends as Windows writes them (checkout uses CRLF here).
+      - run: node scripts/catalog.mjs --check
       - name: sqlc
         run: CGO_ENABLED=0 go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 && echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: a project with every Go module

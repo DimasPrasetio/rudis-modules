@@ -644,6 +644,20 @@ func TestChangePasswordKeepsThisDeviceAndEndsTheOthers(t *testing.T) {
 	}
 }
 
+// A session opened at the very instant the password changed may have been opened with the old
+// password: it ends, on every OS.
+func TestASessionOpenedAtTheInstantOfAPasswordChangeEnds(t *testing.T) {
+	store := newFakeStore(t, "ana@example.com", "secret123", true)
+	svc, _ := newFullService(store)
+	s := login(t, svc, "ana@example.com", "secret123")
+	u := store.byID[1]
+	u.PasswordChangedAt = store.clock.Now()
+	store.byID[1] = u
+	if _, err := svc.Resolve(context.Background(), s.Token); status(t, err) != http.StatusUnauthorized {
+		t.Fatalf("a session opened at the instant of the change survived: %v", err)
+	}
+}
+
 // A sign-in checked at the very instant the password changed cannot tell whether the password it
 // checked was the old or the new one, so it opens no session — even with the new password, and
 // on every OS. A moment later the new password signs in.
