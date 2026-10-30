@@ -157,6 +157,8 @@ date, what, the tags it created.
   - `npm run check` works on Windows: `walk` gives `/` paths on every OS (`go-layers` read
     `infrastructure\repository.go` as outside infrastructure/), and the testbed's header is read
     with CRLF line ends too (`testbed-documented`).
+  - Testbed: `users-alone` starts its API with an explicit unreachable `DB_DSN` instead of the
+    one in `.env` — the next kernel's `.env.example` leaves it empty, which the API refuses.
   - Tags on merge: `auth/v0.8.1`.
 
 - **30 Oct 2026 — persediaan: barang masuk, keluar, dan stok (ROADMAP.md #37, #44, #47; plan
